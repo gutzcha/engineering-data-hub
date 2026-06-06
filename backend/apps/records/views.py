@@ -7,6 +7,7 @@ from apps.accounts.permissions import user_can
 from apps.records.models import Record
 from apps.records.serializers import RecordSerializer
 from apps.records.validation import get_object_type_definition, validate_record_data
+from apps.relationships.services import build_record_graph
 
 
 class IsAuthenticated(permissions.BasePermission):
@@ -72,6 +73,11 @@ class RecordViewSet(viewsets.ModelViewSet):
         record.updated_by = request.user
         record.save(update_fields=["status", "schema_version", "updated_by", "updated_at"])
         return Response(self.get_serializer(record).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["get"])
+    def graph(self, request, pk=None):
+        record = self.get_object()
+        return Response(build_record_graph(record, user=request.user), status=status.HTTP_200_OK)
 
     def create(self, request, *args, **kwargs):
         object_type_key = request.data.get("object_type_key")

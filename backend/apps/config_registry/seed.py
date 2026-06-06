@@ -126,8 +126,47 @@ def starter_configuration_data():
         },
     ]
 
+    relationship_types = [
+        {
+            "key": "product_uses_material",
+            "label": "Product uses material",
+            "source_object_type": "product",
+            "target_object_type": "raw_material",
+        },
+        {
+            "key": "product_has_spec",
+            "label": "Product has spec",
+            "source_object_type": "product",
+            "target_object_type": "product_spec",
+        },
+        {
+            "key": "project_affects_product",
+            "label": "Project affects product",
+            "source_object_type": "project",
+            "target_object_type": "product",
+        },
+        {
+            "key": "supplier_provides_material",
+            "label": "Supplier provides material",
+            "source_object_type": "supplier",
+            "target_object_type": "raw_material",
+        },
+        {
+            "key": "customer_uses_product",
+            "label": "Customer uses product",
+            "source_object_type": "customer",
+            "target_object_type": "product",
+        },
+        {
+            "key": "document_attached_to_record",
+            "label": "Document attached to record",
+            "source_object_type": "document",
+        },
+    ]
+
     return {
         "object_types": object_types,
+        "relationship_types": relationship_types,
         "form_layouts": [],
         "folder_templates": [],
         "dashboards": [],

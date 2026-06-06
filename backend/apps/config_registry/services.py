@@ -69,6 +69,9 @@ def validate_draft(draft: ConfigurationDraft) -> list[dict]:
     else:
         _validate_object_types(object_types, errors)
 
+    object_type_keys = _valid_object_type_keys(object_types)
+    _validate_relationship_types(data, object_type_keys, errors)
+
     _validate_keyed_definition_section(
         data,
         "form_layouts",
@@ -86,6 +89,16 @@ def validate_draft(draft: ConfigurationDraft) -> list[dict]:
     _validate_keyed_definition_section(data, "dashboards", "dashboard", "dashboard", errors)
 
     return errors
+
+
+def _valid_object_type_keys(object_types):
+    if not isinstance(object_types, list):
+        return set()
+    return {
+        object_type.get("key")
+        for object_type in object_types
+        if isinstance(object_type, dict) and _is_snake_case_key(object_type.get("key"))
+    }
 
 
 def _validate_object_types(object_types, errors):
@@ -127,6 +140,93 @@ def _validate_object_types(object_types, errors):
             continue
 
         _validate_fields(fields, object_path, errors)
+
+
+def _validate_relationship_types(data, object_type_keys, errors):
+    if "relationship_types" not in data:
+        return
+
+    relationship_types = data["relationship_types"]
+    if not isinstance(relationship_types, list):
+        errors.append(
+            {
+                "path": "relationship_types",
+                "code": "invalid_relationship_types",
+                "message": "Relationship types must be a list.",
+            }
+        )
+        return
+
+    seen_keys = set()
+    for relationship_index, relationship_type in enumerate(relationship_types):
+        path = f"relationship_types[{relationship_index}]"
+        if not _validate_mapping(
+            relationship_type,
+            path,
+            "relationship type",
+            "relationship_type",
+            errors,
+        ):
+            continue
+
+        key = relationship_type.get("key")
+        if not _is_snake_case_key(key):
+            errors.append(
+                {
+                    "path": f"{path}.key",
+                    "code": "invalid_relationship_type_key",
+                    "message": "Relationship type keys must use lowercase snake case.",
+                }
+            )
+        elif key in seen_keys:
+            errors.append(
+                {
+                    "path": f"{path}.key",
+                    "code": "duplicate_relationship_type_key",
+                    "message": "Relationship type keys must be unique.",
+                }
+            )
+        else:
+            seen_keys.add(key)
+
+        _validate_relationship_object_type_reference(
+            relationship_type,
+            "source_object_type",
+            "source",
+            object_type_keys,
+            path,
+            errors,
+        )
+        _validate_relationship_object_type_reference(
+            relationship_type,
+            "target_object_type",
+            "target",
+            object_type_keys,
+            path,
+            errors,
+        )
+
+
+def _validate_relationship_object_type_reference(
+    relationship_type,
+    field,
+    direction,
+    object_type_keys,
+    path,
+    errors,
+):
+    if field not in relationship_type:
+        return
+
+    object_type_key = relationship_type.get(field)
+    if object_type_key not in object_type_keys:
+        errors.append(
+            {
+                "path": f"{path}.{field}",
+                "code": f"unknown_relationship_{direction}_object_type",
+                "message": f"Relationship {direction} object type must reference an object type.",
+            }
+        )
 
 
 def _validate_fields(fields, object_path, errors):

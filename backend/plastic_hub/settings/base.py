@@ -70,6 +70,7 @@ INSTALLED_APPS = [
     "apps.accounts",
     "apps.config_registry",
     "apps.records",
+    "apps.relationships",
     "apps.api",
 ]
 

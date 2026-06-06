@@ -244,6 +244,58 @@ def test_malformed_optional_definition_sections_block_publish(user, valid_data):
 
 
 @pytest.mark.django_db
+def test_relationship_type_keys_and_object_type_references_are_validated(user, valid_data):
+    draft = create_draft_from_current(user)
+    draft.data = valid_data
+    draft.data["relationship_types"] = [
+        {
+            "key": "Product Uses Material",
+            "label": "Product uses material",
+            "source_object_type": "product",
+            "target_object_type": "raw_material",
+        },
+        {
+            "key": "product_uses_material",
+            "label": "Product uses material copy",
+            "source_object_type": "product",
+            "target_object_type": "missing_type",
+        },
+        {
+            "key": "product_uses_material",
+            "label": "Product uses material duplicate",
+            "source_object_type": "missing_type",
+            "target_object_type": "raw_material",
+        },
+    ]
+    draft.save()
+
+    errors = validate_draft(draft)
+
+    assert {
+        "path": "relationship_types[0].key",
+        "code": "invalid_relationship_type_key",
+        "message": "Relationship type keys must use lowercase snake case.",
+    } in errors
+    assert {
+        "path": "relationship_types[1].target_object_type",
+        "code": "unknown_relationship_target_object_type",
+        "message": "Relationship target object type must reference an object type.",
+    } in errors
+    assert {
+        "path": "relationship_types[2].key",
+        "code": "duplicate_relationship_type_key",
+        "message": "Relationship type keys must be unique.",
+    } in errors
+    assert {
+        "path": "relationship_types[2].source_object_type",
+        "code": "unknown_relationship_source_object_type",
+        "message": "Relationship source object type must reference an object type.",
+    } in errors
+    with pytest.raises(ConfigurationValidationError):
+        publish_draft(draft, user)
+
+
+@pytest.mark.django_db
 def test_malformed_object_entry_blocks_publish(user):
     draft = create_draft_from_current(user)
     draft.data = {"object_types": ["bad object"], "form_layouts": [], "folder_templates": [], "dashboards": []}
@@ -278,6 +330,9 @@ def test_derived_definition_rows_are_immutable_after_publish(user, valid_data):
 
 def test_starter_configuration_contains_required_object_types(valid_data):
     object_type_keys = {object_type["key"] for object_type in valid_data["object_types"]}
+    relationship_type_keys = {
+        relationship_type["key"] for relationship_type in valid_data["relationship_types"]
+    }
 
     assert object_type_keys == {
         "product",
@@ -288,5 +343,13 @@ def test_starter_configuration_contains_required_object_types(valid_data):
         "project",
         "test_method",
         "document",
+    }
+    assert relationship_type_keys == {
+        "product_uses_material",
+        "product_has_spec",
+        "project_affects_product",
+        "supplier_provides_material",
+        "customer_uses_product",
+        "document_attached_to_record",
     }
     assert all(object_type["fields"] for object_type in valid_data["object_types"])
