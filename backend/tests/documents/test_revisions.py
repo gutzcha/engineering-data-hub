@@ -4,6 +4,8 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import IntegrityError
+from rest_framework import serializers
 
 from apps.accounts.models import ObjectPermission
 from apps.records.models import Record
@@ -151,6 +153,57 @@ def test_draft_revision_can_be_replaced_by_editor(
         revision=revision,
         action="revision_replaced",
     ).exists()
+    event = DocumentEvent.objects.filter(
+        document_id=created["id"],
+        revision=revision,
+        action="revision_replaced",
+    ).latest("timestamp")
+    assert event.data["before"]["file_name"] == "drawing.txt"
+    assert event.data["after"]["file_name"] == "drawing-v2.txt"
+
+
+@pytest.mark.django_db
+def test_stale_draft_replace_rechecks_released_state_before_mutating(
+    client,
+    user_factory,
+    document_permissions,
+    product_record,
+    settings,
+    tmp_path,
+    monkeypatch,
+):
+    from apps.documents.models import Document, DocumentRevision
+    from apps.documents.storage import path_for_storage_path
+    from apps.documents.views import _create_or_replace_revision
+    import apps.documents.views as document_views
+
+    settings.MEDIA_ROOT = tmp_path
+    actor = user_factory("stale-replace-engineer", "Engineer")
+    document = Document.objects.create(
+        title="Race Spec",
+        owner_record=product_record,
+        document_type="specification",
+    )
+    revision = _create_or_replace_revision(document, "A", upload("race.txt", b"draft"), actor)
+    original_path = revision.storage_path
+    original_hash = revision.sha256
+    original_bytes = path_for_storage_path(original_path).read_bytes()
+    original_save = document_views.save_uploaded_revision_file
+
+    def release_before_write(*args, **kwargs):
+        DocumentRevision.objects.filter(pk=revision.pk).update(state=DocumentRevision.State.RELEASED)
+        return original_save(*args, **kwargs)
+
+    monkeypatch.setattr(document_views, "save_uploaded_revision_file", release_before_write)
+
+    with pytest.raises(serializers.ValidationError):
+        _create_or_replace_revision(document, "A", upload("race.txt", b"replacement"), actor)
+
+    revision.refresh_from_db()
+    assert revision.state == DocumentRevision.State.RELEASED
+    assert revision.storage_path == original_path
+    assert revision.sha256 == original_hash
+    assert path_for_storage_path(original_path).read_bytes() == original_bytes
 
 
 @pytest.mark.django_db
@@ -217,6 +270,49 @@ def test_released_revision_is_immutable_and_new_label_is_required(
         action="revision_released",
         actor=approver,
     ).exists()
+
+
+@pytest.mark.django_db
+def test_same_label_integrity_error_returns_conflict_response(
+    client,
+    user_factory,
+    document_permissions,
+    product_record,
+    settings,
+    tmp_path,
+    monkeypatch,
+):
+    from apps.documents.models import DocumentRevision
+
+    settings.MEDIA_ROOT = tmp_path
+    client.force_login(user_factory("integrity-engineer", "Engineer"))
+    created = client.post(
+        "/api/documents/",
+        {
+            "owner_record": str(product_record.pk),
+            "title": "Concurrent Spec",
+            "document_type": "specification",
+        },
+    ).json()
+    original_create = DocumentRevision.objects.create
+
+    def raise_integrity_once(*args, **kwargs):
+        if kwargs.get("revision_label") == "A":
+            raise IntegrityError("unique_revision_label_per_document")
+        return original_create(*args, **kwargs)
+
+    monkeypatch.setattr(DocumentRevision.objects, "create", raise_integrity_once)
+
+    response = client.post(
+        f"/api/documents/{created['id']}/revisions/",
+        {
+            "revision_label": "A",
+            "file": upload("same.txt", b"content"),
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["revision_label"][0] == "Revision label already exists."
 
 
 @pytest.mark.django_db
@@ -338,3 +434,79 @@ def test_download_and_preview_require_view_permission(
     assert preview_response.status_code == 200
     assert preview_response.json()["file_name"] == "visible.txt"
     assert preview_response.json()["extraction_status"] == "unsupported"
+
+
+@pytest.mark.django_db
+def test_preview_caps_returned_text_and_reports_truncation(
+    client,
+    user_factory,
+    document_permissions,
+    product_record,
+    settings,
+    tmp_path,
+):
+    from apps.documents.models import DocumentRevision
+
+    settings.MEDIA_ROOT = tmp_path
+    client.force_login(user_factory("preview-cap-engineer", "Engineer"))
+    created = client.post(
+        "/api/documents/",
+        {
+            "owner_record": str(product_record.pk),
+            "title": "Long Preview",
+            "document_type": "note",
+            "revision_label": "A",
+            "file": upload("visible.txt", b"visible text"),
+        },
+    ).json()
+    revision = DocumentRevision.objects.get(pk=created["current_revision"]["id"])
+    revision.extracted_text = "x" * 20001
+    revision.extraction_status = "extracted"
+    revision.save(update_fields=["extracted_text", "extraction_status", "updated_at"])
+
+    client.force_login(user_factory("preview-cap-viewer", "Viewer"))
+    response = client.get(f"/api/documents/{created['id']}/preview/")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["extracted_text"]) == 20000
+    assert body["truncated"] is True
+
+
+@pytest.mark.django_db
+def test_download_missing_storage_file_returns_controlled_not_found(
+    client,
+    user_factory,
+    document_permissions,
+    product_record,
+    settings,
+    tmp_path,
+):
+    from apps.documents.models import DocumentEvent, DocumentRevision
+    from apps.documents.storage import path_for_storage_path
+
+    settings.MEDIA_ROOT = tmp_path
+    client.force_login(user_factory("missing-file-engineer", "Engineer"))
+    created = client.post(
+        "/api/documents/",
+        {
+            "owner_record": str(product_record.pk),
+            "title": "Missing File",
+            "document_type": "note",
+            "revision_label": "A",
+            "file": upload("missing.txt", b"missing soon"),
+        },
+    ).json()
+    revision = DocumentRevision.objects.get(pk=created["current_revision"]["id"])
+    path_for_storage_path(revision.storage_path).unlink()
+
+    client.force_login(user_factory("missing-file-viewer", "Viewer"))
+    response = client.get(f"/api/documents/{created['id']}/download/")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Document file is missing from storage."
+    assert DocumentEvent.objects.filter(
+        document_id=created["id"],
+        revision=revision,
+        action="storage_missing",
+    ).exists()

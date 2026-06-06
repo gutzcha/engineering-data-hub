@@ -1,6 +1,6 @@
 import pytest
 
-from apps.documents.extraction import extract_text
+from apps.documents.extraction import MAX_EXTRACTED_TEXT_CHARS, extract_text
 
 
 def test_docx_extraction_reads_paragraphs_and_table_cells(tmp_path):
@@ -24,6 +24,24 @@ def test_docx_extraction_reads_paragraphs_and_table_cells(tmp_path):
     assert "Material specification" in text
     assert "Grade" in text
     assert "PE-100" in text
+
+
+def test_docx_extraction_caps_extracted_text(tmp_path):
+    from docx import Document
+
+    path = tmp_path / "large.docx"
+    document = Document()
+    document.add_paragraph("x" * (MAX_EXTRACTED_TEXT_CHARS + 1000))
+    document.save(path)
+
+    text, status = extract_text(
+        path,
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        path.name,
+    )
+
+    assert status == "extracted"
+    assert len(text) == MAX_EXTRACTED_TEXT_CHARS
 
 
 def test_xlsx_extraction_reads_visible_sheets_only(tmp_path):

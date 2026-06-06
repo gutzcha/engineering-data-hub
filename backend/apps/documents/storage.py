@@ -1,5 +1,7 @@
 import hashlib
+import os
 from pathlib import Path, PurePath
+from uuid import uuid4
 
 from django.conf import settings
 from django.core.files.uploadedfile import UploadedFile
@@ -13,13 +15,14 @@ class DocumentStorageError(ValueError):
 def save_uploaded_revision_file(document_id, revision_id, uploaded_file: UploadedFile):
     file_name = _safe_file_name(uploaded_file.name)
     safe_revision_id = _safe_path_part(revision_id)
-    relative_path = Path("documents") / str(document_id) / "revisions" / safe_revision_id / file_name
-    absolute_path = _media_path(relative_path)
-    absolute_path.parent.mkdir(parents=True, exist_ok=True)
+    storage_path = Path("documents") / str(document_id) / "revisions" / safe_revision_id / file_name
+    staged_path = Path("documents") / str(document_id) / ".staging" / uuid4().hex / file_name
+    staged_absolute_path = _media_path(staged_path)
+    staged_absolute_path.parent.mkdir(parents=True, exist_ok=True)
 
     digest = hashlib.sha256()
     size = 0
-    with absolute_path.open("wb") as handle:
+    with staged_absolute_path.open("wb") as handle:
         for chunk in uploaded_file.chunks():
             digest.update(chunk)
             size += len(chunk)
@@ -27,12 +30,26 @@ def save_uploaded_revision_file(document_id, revision_id, uploaded_file: Uploade
 
     return {
         "file_name": file_name,
-        "storage_path": relative_path.as_posix(),
+        "storage_path": storage_path.as_posix(),
         "sha256": digest.hexdigest(),
         "size": size,
         "mime_type": getattr(uploaded_file, "content_type", "") or "",
-        "absolute_path": absolute_path,
+        "absolute_path": staged_absolute_path,
+        "staged_path": staged_absolute_path,
     }
+
+
+def finalize_uploaded_revision_file(file_data):
+    destination = path_for_storage_path(file_data["storage_path"])
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    os.replace(file_data["staged_path"], destination)
+
+
+def discard_uploaded_revision_file(file_data):
+    try:
+        Path(file_data["staged_path"]).unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def path_for_storage_path(storage_path: str) -> Path:
