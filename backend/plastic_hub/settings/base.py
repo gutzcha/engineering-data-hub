@@ -74,6 +74,7 @@ INSTALLED_APPS = [
     "apps.records",
     "apps.relationships",
     "apps.search",
+    "apps.workflows",
     "apps.api",
 ]
 
