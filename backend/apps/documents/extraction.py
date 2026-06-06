@@ -1,6 +1,12 @@
 from pathlib import Path
 
 
+MAX_EXTRACTED_TEXT_CHARS = 200_000
+MAX_PDF_PAGES = 50
+MAX_XLSX_ROWS_PER_SHEET = 5_000
+MAX_XLSX_TOTAL_CELLS = 50_000
+OCR_TIMEOUT_SECONDS = 10
+
 PDF_MIME_TYPES = {"application/pdf"}
 DOCX_MIME_TYPES = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -31,7 +37,12 @@ def _extract_pdf(path: Path) -> tuple[str, str]:
         from pypdf import PdfReader
 
         reader = PdfReader(path)
-        text = "\n".join(filter(None, (page.extract_text() or "" for page in reader.pages)))
+        parts = []
+        for page in reader.pages[:MAX_PDF_PAGES]:
+            parts.append(page.extract_text() or "")
+            if _joined_length(parts) >= MAX_EXTRACTED_TEXT_CHARS:
+                break
+        text = _cap_text("\n".join(filter(None, parts)))
     except Exception:
         return "", "failed"
     return text, "extracted" if text.strip() else "unsupported"
@@ -46,7 +57,7 @@ def _extract_docx(path: Path) -> tuple[str, str]:
         for table in document.tables:
             for row in table.rows:
                 parts.extend(cell.text for cell in row.cells if cell.text)
-        text = "\n".join(parts)
+        text = _cap_text("\n".join(parts))
     except Exception:
         return "", "failed"
     return text, "extracted" if text.strip() else "unsupported"
@@ -58,16 +69,24 @@ def _extract_xlsx(path: Path) -> tuple[str, str]:
 
         workbook = load_workbook(path, read_only=True, data_only=True)
         parts = []
+        total_cells = 0
         for sheet in workbook.worksheets:
             if sheet.sheet_state != "visible":
                 continue
             parts.append(sheet.title)
-            for row in sheet.iter_rows(values_only=True):
+            for row_index, row in enumerate(sheet.iter_rows(values_only=True), start=1):
+                if row_index > MAX_XLSX_ROWS_PER_SHEET or total_cells >= MAX_XLSX_TOTAL_CELLS:
+                    break
                 values = [str(value) for value in row if value is not None and str(value) != ""]
+                total_cells += len(row)
                 if values:
                     parts.append("\t".join(values))
+                if _joined_length(parts) >= MAX_EXTRACTED_TEXT_CHARS:
+                    break
+            if total_cells >= MAX_XLSX_TOTAL_CELLS or _joined_length(parts) >= MAX_EXTRACTED_TEXT_CHARS:
+                break
         workbook.close()
-        text = "\n".join(parts)
+        text = _cap_text("\n".join(parts))
     except Exception:
         return "", "failed"
     return text, "extracted" if text.strip() else "unsupported"
@@ -82,7 +101,16 @@ def _extract_image(path: Path) -> tuple[str, str]:
 
     try:
         with Image.open(path) as image:
-            text = pytesseract.image_to_string(image)
+            text = pytesseract.image_to_string(image, timeout=OCR_TIMEOUT_SECONDS)
     except Exception:
         return "", "failed"
+    text = _cap_text(text)
     return text, "extracted" if text.strip() else "unsupported"
+
+
+def _cap_text(text: str) -> str:
+    return text[:MAX_EXTRACTED_TEXT_CHARS]
+
+
+def _joined_length(parts) -> int:
+    return sum(len(part) for part in parts) + max(len(parts) - 1, 0)

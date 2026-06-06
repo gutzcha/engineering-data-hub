@@ -1,10 +1,11 @@
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.http import Http404
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import APIException
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
@@ -14,11 +15,23 @@ from apps.documents.models import Document, DocumentEvent, DocumentRevision
 from apps.documents.serializers import DocumentRevisionSerializer, DocumentSerializer
 from apps.documents.storage import (
     delete_storage_path,
+    discard_finalized_revision_file,
+    discard_uploaded_revision_file,
+    finalize_uploaded_revision_file,
     path_for_storage_path,
     save_uploaded_revision_file,
 )
 from apps.folders.models import ManagedFolder
 from apps.records.models import Record
+
+
+PREVIEW_TEXT_CHARS = 20_000
+
+
+class RevisionConflict(APIException):
+    status_code = status.HTTP_409_CONFLICT
+    default_detail = "Revision conflict."
+    default_code = "revision_conflict"
 
 
 class IsAuthenticated(permissions.BasePermission):
@@ -80,6 +93,7 @@ class DocumentViewSet(viewsets.ViewSet):
             return Response({"file": ["This field is required."]}, status=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
+            document = self._lock_document(document.pk)
             revision = _create_or_replace_revision(
                 document=document,
                 revision_label=revision_label,
@@ -96,9 +110,14 @@ class DocumentViewSet(viewsets.ViewSet):
     def release_revision(self, request, pk=None, revision_id=None):
         document = self._get_document(pk)
         self._require_record_permission(request.user, "release", document.owner_record)
-        revision = get_object_or_404(DocumentRevision, pk=revision_id, document=document)
 
         with transaction.atomic():
+            document = self._lock_document(document.pk)
+            revision = get_object_or_404(
+                DocumentRevision.objects.select_for_update(),
+                pk=revision_id,
+                document=document,
+            )
             if revision.state != DocumentRevision.State.RELEASED:
                 revision.state = DocumentRevision.State.RELEASED
                 revision.released_at = timezone.now()
@@ -115,8 +134,15 @@ class DocumentViewSet(viewsets.ViewSet):
         document = self._get_document(pk)
         self._require_record_permission(request.user, "view", document.owner_record)
         revision = self._current_revision_or_404(document)
+        path = path_for_storage_path(revision.storage_path)
+        if not path.exists():
+            return _missing_storage_response(document, revision, request.user)
+        try:
+            file_handle = path.open("rb")
+        except FileNotFoundError:
+            return _missing_storage_response(document, revision, request.user)
         response = FileResponse(
-            path_for_storage_path(revision.storage_path).open("rb"),
+            file_handle,
             content_type=revision.mime_type or "application/octet-stream",
             as_attachment=True,
             filename=revision.file_name,
@@ -128,6 +154,7 @@ class DocumentViewSet(viewsets.ViewSet):
         document = self._get_document(pk)
         self._require_record_permission(request.user, "view", document.owner_record)
         revision = self._current_revision_or_404(document)
+        extracted_text = revision.extracted_text[:PREVIEW_TEXT_CHARS]
         return Response(
             {
                 "document": document.pk,
@@ -136,7 +163,8 @@ class DocumentViewSet(viewsets.ViewSet):
                 "file_name": revision.file_name,
                 "mime_type": revision.mime_type,
                 "extraction_status": revision.extraction_status,
-                "extracted_text": revision.extracted_text,
+                "extracted_text": extracted_text,
+                "truncated": len(revision.extracted_text) > PREVIEW_TEXT_CHARS,
             },
             status=status.HTTP_200_OK,
         )
@@ -144,6 +172,16 @@ class DocumentViewSet(viewsets.ViewSet):
     def _get_document(self, pk):
         return get_object_or_404(
             Document.objects.select_related("owner_record", "current_revision", "folder"),
+            pk=pk,
+        )
+
+    def _lock_document(self, pk):
+        return get_object_or_404(
+            Document.objects.select_for_update().select_related(
+                "owner_record",
+                "current_revision",
+                "folder",
+            ),
             pk=pk,
         )
 
@@ -166,7 +204,7 @@ class DocumentViewSet(viewsets.ViewSet):
 
 
 def _create_or_replace_revision(document, revision_label: str, uploaded_file, actor):
-    revision = DocumentRevision.objects.filter(
+    revision = DocumentRevision.objects.select_for_update().filter(
         document=document,
         revision_label=revision_label,
     ).first()
@@ -175,22 +213,41 @@ def _create_or_replace_revision(document, revision_label: str, uploaded_file, ac
 
     action = "revision_replaced" if revision else "revision_created"
     if revision is None:
-        revision = DocumentRevision.objects.create(
-            document=document,
-            revision_label=revision_label,
-            file_name="",
-            storage_path="",
-            sha256="",
-            created_by=actor,
-        )
+        try:
+            revision = DocumentRevision.objects.create(
+                document=document,
+                revision_label=revision_label,
+                file_name="",
+                storage_path="",
+                sha256="",
+                created_by=actor,
+            )
+        except IntegrityError as error:
+            raise RevisionConflict({"revision_label": ["Revision label already exists."]}) from error
 
+    before = _revision_snapshot(revision)
     previous_storage_path = revision.storage_path
     file_data = save_uploaded_revision_file(document.pk, revision.pk, uploaded_file)
-    extracted_text, extraction_status = extract_text(
-        file_data["absolute_path"],
-        file_data["mime_type"],
-        file_data["file_name"],
-    )
+    try:
+        revision.refresh_from_db()
+        if revision.state == DocumentRevision.State.RELEASED:
+            raise _revision_label_error(
+                "Released revisions cannot be replaced. Use a new revision label."
+            )
+        extracted_text, extraction_status = extract_text(
+            file_data["absolute_path"],
+            file_data["mime_type"],
+            file_data["file_name"],
+        )
+        revision.refresh_from_db()
+        if revision.state == DocumentRevision.State.RELEASED:
+            raise _revision_label_error(
+                "Released revisions cannot be replaced. Use a new revision label."
+            )
+        finalize_uploaded_revision_file(file_data)
+    except Exception:
+        discard_uploaded_revision_file(file_data)
+        raise
 
     revision.file_name = file_data["file_name"]
     revision.storage_path = file_data["storage_path"]
@@ -200,22 +257,32 @@ def _create_or_replace_revision(document, revision_label: str, uploaded_file, ac
     revision.extracted_text = extracted_text
     revision.extraction_status = extraction_status
     revision.created_by = actor
-    revision.save(
-        update_fields=[
-            "file_name",
-            "storage_path",
-            "sha256",
-            "size",
-            "mime_type",
-            "extracted_text",
-            "extraction_status",
-            "created_by",
-            "updated_at",
-        ]
-    )
+    try:
+        revision.save(
+            update_fields=[
+                "file_name",
+                "storage_path",
+                "sha256",
+                "size",
+                "mime_type",
+                "extracted_text",
+                "extraction_status",
+                "created_by",
+                "updated_at",
+            ]
+        )
+        _record_event(
+            document,
+            revision,
+            action,
+            actor,
+            {"before": before, "after": _revision_snapshot(revision)},
+        )
+    except Exception:
+        discard_finalized_revision_file(file_data)
+        raise
     if previous_storage_path and previous_storage_path != revision.storage_path:
-        delete_storage_path(previous_storage_path)
-    _record_event(document, revision, action, actor)
+        transaction.on_commit(lambda: delete_storage_path(previous_storage_path))
     return revision
 
 
@@ -229,7 +296,25 @@ def _record_event(document, revision, action: str, actor, data=None):
     )
 
 
+def _missing_storage_response(document, revision, actor):
+    _record_event(document, revision, "storage_missing", actor)
+    return Response(
+        {"detail": "Document file is missing from storage."},
+        status=status.HTTP_404_NOT_FOUND,
+    )
+
+
 def _revision_label_error(message):
     from rest_framework import serializers
 
     raise serializers.ValidationError({"revision_label": [message]})
+
+
+def _revision_snapshot(revision):
+    return {
+        "file_name": revision.file_name,
+        "sha256": revision.sha256,
+        "size": revision.size,
+        "storage_path": revision.storage_path,
+        "state": revision.state,
+    }
