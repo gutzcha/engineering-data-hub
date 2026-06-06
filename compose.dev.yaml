@@ -4,6 +4,8 @@ services:
       - "443:443"
 
   backend:
+    environment:
+      DJANGO_SETTINGS_MODULE: plastic_hub.settings.dev
     command: python manage.py runserver 0.0.0.0:8000
     ports:
       - "8000:8000"
@@ -14,6 +16,8 @@ services:
       - backup_files:/data/backups
 
   worker:
+    environment:
+      DJANGO_SETTINGS_MODULE: plastic_hub.settings.dev
     volumes:
       - ./backend:/app
       - managed_files:/data/managed
@@ -21,6 +25,8 @@ services:
       - backup_files:/data/backups
 
   beat:
+    environment:
+      DJANGO_SETTINGS_MODULE: plastic_hub.settings.dev
     volumes:
       - ./backend:/app
       - managed_files:/data/managed

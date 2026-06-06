@@ -15,10 +15,8 @@ RUN apt-get update \
 
 COPY . .
 
-RUN if [ -f requirements.txt ]; then pip install -r requirements.txt; fi \
-    && if [ -f pyproject.toml ]; then pip install .; fi \
-    && pip install gunicorn psycopg[binary]
+RUN if [ -f pyproject.toml ]; then pip install .; fi
 
 EXPOSE 8000
 
-CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000"]
+CMD ["gunicorn", "plastic_hub.wsgi:application", "--bind", "0.0.0.0:8000"]

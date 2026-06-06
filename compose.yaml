@@ -22,7 +22,9 @@ services:
       context: ./backend
     restart: unless-stopped
     env_file: *env_files
-    command: gunicorn config.wsgi:application --bind 0.0.0.0:8000
+    environment:
+      DJANGO_SETTINGS_MODULE: plastic_hub.settings.prod
+    command: gunicorn plastic_hub.wsgi:application --bind 0.0.0.0:8000
     volumes:
       - managed_files:/data/managed
       - media_files:/data/media
@@ -40,7 +42,9 @@ services:
       context: ./backend
     restart: unless-stopped
     env_file: *env_files
-    command: celery -A config worker -l info
+    environment:
+      DJANGO_SETTINGS_MODULE: plastic_hub.settings.prod
+    command: celery -A plastic_hub worker -l info
     volumes:
       - managed_files:/data/managed
       - media_files:/data/media
@@ -58,7 +62,9 @@ services:
       context: ./backend
     restart: unless-stopped
     env_file: *env_files
-    command: celery -A config beat -l info
+    environment:
+      DJANGO_SETTINGS_MODULE: plastic_hub.settings.prod
+    command: celery -A plastic_hub beat -l info
     volumes:
       - managed_files:/data/managed
       - media_files:/data/media
