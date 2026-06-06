@@ -73,6 +73,7 @@ INSTALLED_APPS = [
     "apps.folders",
     "apps.records",
     "apps.relationships",
+    "apps.search",
     "apps.api",
 ]
 
@@ -116,6 +117,7 @@ REST_FRAMEWORK = {
 CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", "http://localhost:5173")
 
 MEILI_URL = os.environ.get("MEILI_URL", "")
+MEILI_MASTER_KEY = os.environ.get("MEILI_MASTER_KEY", "")
 REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
 MANAGED_FILE_ROOT = os.environ.get("MANAGED_FILE_ROOT", "/data/managed")
 MANAGED_FOLDERS_AUTO_GENERATE = env_bool("MANAGED_FOLDERS_AUTO_GENERATE", True)
