@@ -71,6 +71,7 @@ INSTALLED_APPS = [
     "apps.config_registry",
     "apps.documents",
     "apps.folders",
+    "apps.projects",
     "apps.records",
     "apps.relationships",
     "apps.search",
