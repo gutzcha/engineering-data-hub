@@ -69,6 +69,7 @@ INSTALLED_APPS = [
     "django_filters",
     "apps.accounts",
     "apps.config_registry",
+    "apps.records",
     "apps.api",
 ]
 
