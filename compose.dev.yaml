@@ -1,0 +1,42 @@
+services:
+  proxy:
+    ports:
+      - "443:443"
+
+  backend:
+    command: python manage.py runserver 0.0.0.0:8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - managed_files:/data/managed
+      - media_files:/data/media
+      - backup_files:/data/backups
+
+  worker:
+    volumes:
+      - ./backend:/app
+      - managed_files:/data/managed
+      - media_files:/data/media
+      - backup_files:/data/backups
+
+  beat:
+    volumes:
+      - ./backend:/app
+      - managed_files:/data/managed
+      - media_files:/data/media
+      - backup_files:/data/backups
+
+  meilisearch:
+    ports:
+      - "7700:7700"
+    environment:
+      MEILI_ENV: development
+
+  frontend:
+    command: npm run dev -- --host 0.0.0.0
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
