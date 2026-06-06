@@ -8,3 +8,5 @@ DATABASES = {
 }
 
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
+
+MANAGED_FOLDERS_AUTO_GENERATE = False

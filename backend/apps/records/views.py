@@ -4,6 +4,7 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from apps.accounts.permissions import user_can
+from apps.folders.services import ManagedFolderCollisionError, generate_managed_folder
 from apps.records.models import Record
 from apps.records.serializers import RecordSerializer
 from apps.records.validation import get_object_type_definition, validate_record_data
@@ -78,6 +79,33 @@ class RecordViewSet(viewsets.ModelViewSet):
     def graph(self, request, pk=None):
         record = self.get_object()
         return Response(build_record_graph(record, user=request.user), status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="folders/generate")
+    def generate_folder(self, request, pk=None):
+        record = self.get_object()
+        if not user_can(request.user, "admin", record.object_type_key, record_id=str(record.pk)):
+            raise PermissionDenied("You do not have permission to generate folders for this record.")
+        try:
+            managed_folder = generate_managed_folder(record, actor=request.user)
+        except ValueError as error:
+            return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
+        except ManagedFolderCollisionError as error:
+            return Response(
+                {
+                    "detail": "Managed folder target already exists.",
+                    "relative_path": error.relative_path,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(
+            {
+                "id": managed_folder.pk,
+                "relative_path": managed_folder.relative_path,
+                "template_key": managed_folder.template_key,
+                "state": managed_folder.state,
+            },
+            status=status.HTTP_200_OK,
+        )
 
     def create(self, request, *args, **kwargs):
         object_type_key = request.data.get("object_type_key")

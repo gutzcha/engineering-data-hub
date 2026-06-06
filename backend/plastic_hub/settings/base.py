@@ -69,6 +69,7 @@ INSTALLED_APPS = [
     "django_filters",
     "apps.accounts",
     "apps.config_registry",
+    "apps.folders",
     "apps.records",
     "apps.relationships",
     "apps.api",
@@ -116,6 +117,7 @@ CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", "http://localhost:5173")
 MEILI_URL = os.environ.get("MEILI_URL", "")
 REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
 MANAGED_FILE_ROOT = os.environ.get("MANAGED_FILE_ROOT", "/data/managed")
+MANAGED_FOLDERS_AUTO_GENERATE = env_bool("MANAGED_FOLDERS_AUTO_GENERATE", True)
 MEDIA_ROOT = os.environ.get("MEDIA_ROOT", "/data/media")
 BACKUP_ROOT = os.environ.get("BACKUP_ROOT", "/data/backups")
 

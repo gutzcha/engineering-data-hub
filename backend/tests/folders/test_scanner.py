@@ -1,0 +1,315 @@
+import pytest
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
+
+from apps.accounts.models import ObjectPermission
+from apps.folders.models import FolderChangeEvent, ManagedFolder
+from apps.folders.scanner import scan_managed_folder
+from apps.folders.services import generate_managed_folder
+from apps.records.models import Record
+
+
+@pytest.fixture
+def user_factory(db):
+    User = get_user_model()
+
+    def create_user(username, role_name=None, *, is_superuser=False):
+        user = User.objects.create_user(
+            username=username,
+            password="test-pass",
+            is_superuser=is_superuser,
+        )
+        if role_name:
+            group, _created = Group.objects.get_or_create(name=role_name)
+            user.groups.add(group)
+        return user
+
+    return create_user
+
+
+@pytest.fixture
+def product_record(db):
+    return Record.objects.create(
+        object_type_key="product",
+        code="PROD-000010",
+        title="Scanner Film",
+        schema_version=1,
+        data={},
+    )
+
+
+@pytest.fixture
+def generated_folder(product_record, settings, tmp_path):
+    settings.MANAGED_FILE_ROOT = tmp_path
+    return generate_managed_folder(product_record)
+
+
+@pytest.mark.django_db
+def test_folder_generation_creates_directories_and_managed_folder(
+    product_record,
+    settings,
+    tmp_path,
+):
+    settings.MANAGED_FILE_ROOT = tmp_path
+
+    managed_folder = generate_managed_folder(product_record)
+
+    assert managed_folder.record == product_record
+    assert managed_folder.template_key == "product_standard"
+    assert managed_folder.state == "active"
+    assert (tmp_path / "Products" / "PROD-000010_Scanner_Film").is_dir()
+    assert (tmp_path / "Products" / "PROD-000010_Scanner_Film" / "01_Specifications").is_dir()
+    assert ManagedFolder.objects.filter(record=product_record, folder_role="primary").count() == 1
+
+
+@pytest.mark.django_db
+def test_folder_generation_is_idempotent_for_existing_managed_folder(
+    product_record,
+    settings,
+    tmp_path,
+):
+    settings.MANAGED_FILE_ROOT = tmp_path
+    first = generate_managed_folder(product_record)
+
+    second = generate_managed_folder(product_record)
+
+    assert second == first
+    assert second.relative_path == "Products/PROD-000010_Scanner_Film"
+    assert ManagedFolder.objects.filter(record=product_record, folder_role="primary").count() == 1
+    assert not FolderChangeEvent.objects.filter(event_type="collision").exists()
+
+
+@pytest.mark.django_db
+def test_direct_added_file_creates_pending_added_event(generated_folder, tmp_path):
+    scan_managed_folder(generated_folder)
+    target = tmp_path / generated_folder.relative_path / "01_Specifications" / "new-spec.txt"
+    target.write_text("first version", encoding="utf-8")
+
+    events = scan_managed_folder(generated_folder)
+
+    assert [event.event_type for event in events] == ["added"]
+    event = events[0]
+    assert event.path == f"{generated_folder.relative_path}/01_Specifications/new-spec.txt"
+    assert event.review_status == "pending"
+    assert event.detected_hash
+
+
+@pytest.mark.django_db
+def test_file_added_before_first_scan_creates_pending_added_event(generated_folder, tmp_path):
+    target = tmp_path / generated_folder.relative_path / "01_Specifications" / "pre-scan.txt"
+    target.write_text("created before scanner ever ran", encoding="utf-8")
+
+    events = scan_managed_folder(generated_folder)
+
+    assert [event.event_type for event in events] == ["added"]
+    assert events[0].path == f"{generated_folder.relative_path}/01_Specifications/pre-scan.txt"
+    assert events[0].review_status == "pending"
+
+
+@pytest.mark.django_db
+def test_modified_file_creates_modified_event(generated_folder, tmp_path):
+    target = tmp_path / generated_folder.relative_path / "01_Specifications" / "spec.txt"
+    target.write_text("first version", encoding="utf-8")
+    scan_managed_folder(generated_folder)
+    target.write_text("second version", encoding="utf-8")
+
+    events = scan_managed_folder(generated_folder)
+
+    assert [event.event_type for event in events] == ["modified"]
+    assert events[0].path == f"{generated_folder.relative_path}/01_Specifications/spec.txt"
+
+
+@pytest.mark.django_db
+def test_deleted_file_creates_deleted_event(generated_folder, tmp_path):
+    target = tmp_path / generated_folder.relative_path / "01_Specifications" / "obsolete.txt"
+    target.write_text("first version", encoding="utf-8")
+    scan_managed_folder(generated_folder)
+    target.unlink()
+
+    events = scan_managed_folder(generated_folder)
+
+    assert [event.event_type for event in events] == ["deleted"]
+    assert events[0].path == f"{generated_folder.relative_path}/01_Specifications/obsolete.txt"
+
+
+@pytest.mark.django_db
+def test_moved_file_creates_moved_event(generated_folder, tmp_path):
+    source = tmp_path / generated_folder.relative_path / "01_Specifications" / "old-name.txt"
+    target = tmp_path / generated_folder.relative_path / "02_Drawings" / "new-name.txt"
+    source.write_text("same content", encoding="utf-8")
+    scan_managed_folder(generated_folder)
+    source.rename(target)
+
+    events = scan_managed_folder(generated_folder)
+
+    assert [event.event_type for event in events] == ["moved"]
+    assert events[0].path == (
+        f"{generated_folder.relative_path}/01_Specifications/old-name.txt -> "
+        f"{generated_folder.relative_path}/02_Drawings/new-name.txt"
+    )
+
+
+@pytest.mark.django_db
+def test_review_routes_update_status(client, user_factory, generated_folder):
+    event = FolderChangeEvent.objects.create(
+        event_type="added",
+        path=f"{generated_folder.relative_path}/01_Specifications/review.txt",
+        detected_hash="abc",
+        matched_record=generated_folder.record,
+        managed_folder=generated_folder,
+    )
+    admin = user_factory("folder-admin", is_superuser=True)
+    client.force_login(admin)
+
+    list_response = client.get("/api/folder-events/")
+    accept_response = client.post(f"/api/folder-events/{event.pk}/accept/")
+    event.refresh_from_db()
+    assert list_response.status_code == 200
+    assert len(list_response.json()) == 1
+    assert accept_response.status_code == 200
+    assert event.review_status == "accepted"
+    assert event.reviewer == admin
+
+    ignored = FolderChangeEvent.objects.create(
+        event_type="modified",
+        path=f"{generated_folder.relative_path}/01_Specifications/ignore.txt",
+        managed_folder=generated_folder,
+        matched_record=generated_folder.record,
+    )
+    ignore_response = client.post(f"/api/folder-events/{ignored.pk}/ignore/")
+    ignored.refresh_from_db()
+
+    assert ignore_response.status_code == 200
+    assert ignored.review_status == "ignored"
+
+
+@pytest.mark.django_db
+def test_link_document_returns_not_implemented_until_documents_app_exists(
+    client,
+    user_factory,
+    generated_folder,
+):
+    event = FolderChangeEvent.objects.create(
+        event_type="added",
+        path=f"{generated_folder.relative_path}/01_Specifications/link.txt",
+        managed_folder=generated_folder,
+        matched_record=generated_folder.record,
+    )
+    client.force_login(user_factory("folder-link-admin", is_superuser=True))
+
+    response = client.post(f"/api/folder-events/{event.pk}/link-document/")
+
+    assert response.status_code == 501
+    event.refresh_from_db()
+    assert event.review_status == "pending"
+
+
+@pytest.mark.django_db
+def test_link_document_with_document_id_does_not_change_status(
+    client,
+    user_factory,
+    generated_folder,
+):
+    event = FolderChangeEvent.objects.create(
+        event_type="added",
+        path=f"{generated_folder.relative_path}/01_Specifications/link.txt",
+        managed_folder=generated_folder,
+        matched_record=generated_folder.record,
+    )
+    client.force_login(user_factory("folder-link-id-admin", is_superuser=True))
+
+    response = client.post(
+        f"/api/folder-events/{event.pk}/link-document/",
+        {"document_id": "future-doc"},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 501
+    event.refresh_from_db()
+    assert event.review_status == "pending"
+
+
+@pytest.mark.django_db
+def test_review_routes_allow_user_with_edit_permission(client, user_factory, generated_folder):
+    ObjectPermission.objects.create(
+        role_name="Folder Engineer",
+        object_type_key="product",
+        can_view=True,
+        can_edit=True,
+    )
+    event = FolderChangeEvent.objects.create(
+        event_type="added",
+        path=f"{generated_folder.relative_path}/01_Specifications/editable.txt",
+        managed_folder=generated_folder,
+        matched_record=generated_folder.record,
+    )
+    client.force_login(user_factory("folder-engineer", "Folder Engineer"))
+
+    response = client.post(f"/api/folder-events/{event.pk}/accept/")
+
+    assert response.status_code == 200
+    event.refresh_from_db()
+    assert event.review_status == "accepted"
+
+
+@pytest.mark.django_db
+def test_review_inbox_filters_events_by_view_permission(client, user_factory):
+    product = Record.objects.create(
+        object_type_key="product",
+        code="PROD-000011",
+        title="Visible Product",
+        schema_version=1,
+        data={},
+    )
+    raw_material = Record.objects.create(
+        object_type_key="raw_material",
+        code="MAT-000011",
+        title="Hidden Material",
+        schema_version=1,
+        data={},
+    )
+    supplier = Record.objects.create(
+        object_type_key="supplier",
+        code="SUP-000011",
+        title="Hidden Supplier",
+        schema_version=1,
+        data={},
+    )
+    visible = FolderChangeEvent.objects.create(
+        event_type="added",
+        path="Products/PROD-000011_Visible_Product/spec.txt",
+        matched_record=product,
+    )
+    hidden_material = FolderChangeEvent.objects.create(
+        event_type="added",
+        path="Raw_Materials/MAT-000011_Hidden_Material/tds.txt",
+        matched_record=raw_material,
+    )
+    hidden_supplier = FolderChangeEvent.objects.create(
+        event_type="added",
+        path="Suppliers/SUP-000011_Hidden_Supplier/cert.txt",
+        matched_record=supplier,
+    )
+    unmatched = FolderChangeEvent.objects.create(
+        event_type="collision",
+        path="Unmatched/path",
+    )
+    ObjectPermission.objects.create(
+        role_name="Product Viewer",
+        object_type_key="product",
+        can_view=True,
+    )
+    client.force_login(user_factory("product-folder-viewer", "Product Viewer"))
+
+    list_response = client.get("/api/folder-events/")
+    visible_response = client.get(f"/api/folder-events/{visible.pk}/")
+    hidden_response = client.get(f"/api/folder-events/{hidden_material.pk}/")
+    supplier_response = client.get(f"/api/folder-events/{hidden_supplier.pk}/")
+    unmatched_response = client.get(f"/api/folder-events/{unmatched.pk}/")
+
+    assert list_response.status_code == 200
+    assert [event["id"] for event in list_response.json()] == [visible.pk]
+    assert visible_response.status_code == 200
+    assert hidden_response.status_code == 404
+    assert supplier_response.status_code == 404
+    assert unmatched_response.status_code == 404
