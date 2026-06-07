@@ -2,6 +2,8 @@ services:
   proxy:
     ports:
       - "443:443"
+    environment:
+      CADDY_TLS_DIRECTIVE: tls internal
 
   backend:
     environment:

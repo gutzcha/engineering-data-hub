@@ -11,6 +11,7 @@ RUN apt-get update \
         build-essential \
         libpq-dev \
         gcc \
+        postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 COPY . .

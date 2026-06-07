@@ -6,6 +6,7 @@ urlpatterns = [
     path("", include("apps.workflows.urls")),
     path("api/accounts/", include("apps.accounts.urls")),
     path("api/audit/", include("apps.audit.urls")),
+    path("api/backups/", include("apps.backups.urls")),
     path("api/config/", include("apps.config_registry.urls")),
     path("api/documents/", include("apps.documents.urls")),
     path("api/folder-events/", include("apps.folders.urls")),

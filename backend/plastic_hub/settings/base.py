@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from urllib.parse import parse_qsl, urlparse
 
+from celery.schedules import crontab
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -69,6 +70,7 @@ INSTALLED_APPS = [
     "django_filters",
     "apps.accounts",
     "apps.audit",
+    "apps.backups",
     "apps.config_registry",
     "apps.documents",
     "apps.folders",
@@ -109,7 +111,7 @@ else:
     }
 
 LANGUAGE_CODE = "en-us"
-TIME_ZONE = "UTC"
+TIME_ZONE = os.environ.get("TIME_ZONE", "UTC")
 USE_I18N = True
 USE_TZ = True
 
@@ -129,7 +131,15 @@ MANAGED_FILE_ROOT = os.environ.get("MANAGED_FILE_ROOT", "/data/managed")
 MANAGED_FOLDERS_AUTO_GENERATE = env_bool("MANAGED_FOLDERS_AUTO_GENERATE", True)
 MEDIA_ROOT = os.environ.get("MEDIA_ROOT", "/data/media")
 BACKUP_ROOT = os.environ.get("BACKUP_ROOT", "/data/backups")
+BACKUP_ENV_FILE = os.environ.get("BACKUP_ENV_FILE", str(REPO_ROOT / ".env"))
 
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_TASK_DEFAULT_QUEUE = "plastic_hub"
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_BEAT_SCHEDULE = {
+    "nightly-backup-at-0200": {
+        "task": "apps.backups.tasks.create_scheduled_backup",
+        "schedule": crontab(hour=2, minute=0),
+    }
+}

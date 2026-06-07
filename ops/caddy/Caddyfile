@@ -1,9 +1,9 @@
 {
-	email {$CADDY_EMAIL}
+	email {$CADDY_EMAIL:it@example.com}
 }
 
 {$APP_HOST} {
-	tls internal
+	{$CADDY_TLS_DIRECTIVE:tls internal}
 
 	handle /api/* {
 		reverse_proxy backend:8000
