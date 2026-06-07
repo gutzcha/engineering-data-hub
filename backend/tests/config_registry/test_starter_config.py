@@ -3,9 +3,15 @@ from pathlib import Path
 
 import pytest
 from django.contrib.auth import get_user_model
+from rest_framework import serializers
 
 from apps.config_registry.seed import starter_configuration_data
 from apps.config_registry.services import create_draft_from_current, publish_draft, validate_draft
+from apps.records.models import Record
+from apps.records.validation import validate_record_data
+from apps.reports.models import Dashboard, DashboardWidget
+from apps.workflows.engine import get_or_create_instance_for_record
+from apps.workflows.models import WorkflowDefinition, WorkflowTransition
 
 
 FIXTURE_PATH = (
@@ -74,6 +80,10 @@ def _field_keys(object_type):
     return {field["key"] for field in object_type["fields"]}
 
 
+def _field_by_key(object_type, field_key):
+    return next(field for field in object_type["fields"] if field["key"] == field_key)
+
+
 def test_starter_configuration_loads_from_plastic_engineering_fixture():
     assert FIXTURE_PATH.exists()
 
@@ -137,6 +147,85 @@ def test_starter_configuration_contains_required_plastic_engineering_content():
 
 
 @pytest.mark.django_db
+def test_starter_record_refs_use_runtime_target_key_and_validate_target_type():
+    User = get_user_model()
+    user = User.objects.create_user(username="starter-ref-admin", password="test-pass")
+    draft = create_draft_from_current(user)
+    publish_draft(draft, user)
+    object_types = _by_key(starter_configuration_data()["object_types"])
+
+    record_ref_fields = [
+        _field_by_key(object_types["raw_material"], "supplier"),
+        _field_by_key(object_types["product_spec"], "product"),
+        _field_by_key(object_types["project"], "linked_product"),
+    ]
+    assert all(field.get("target_object_type") for field in record_ref_fields)
+    assert all("reference_target_type" not in field for field in record_ref_fields)
+
+    supplier = Record.objects.create(
+        object_type_key="supplier",
+        code="SUP-REF-001",
+        title="Supplier Ref",
+        schema_version=1,
+        data={},
+    )
+    product = Record.objects.create(
+        object_type_key="product",
+        code="PROD-REF-001",
+        title="Product Ref",
+        schema_version=1,
+        data={},
+    )
+
+    with pytest.raises(serializers.ValidationError) as raw_material_error:
+        validate_record_data(
+            "raw_material",
+            {
+                "supplier_material_code": "RM-BAD",
+                "material_family": "Base Resin",
+                "supplier": str(product.pk),
+            },
+        )
+    assert raw_material_error.value.detail["data"]["supplier"][0] == (
+        "Referenced record must be a supplier."
+    )
+    validate_record_data(
+        "raw_material",
+        {
+            "supplier_material_code": "RM-GOOD",
+            "material_family": "Base Resin",
+            "supplier": str(supplier.pk),
+        },
+    )
+
+    with pytest.raises(serializers.ValidationError) as spec_error:
+        validate_record_data(
+            "product_spec",
+            {
+                "spec_number": "SPEC-BAD",
+                "product": str(supplier.pk),
+                "revision": "A",
+            },
+        )
+    assert spec_error.value.detail["data"]["product"][0] == (
+        "Referenced record must be a product."
+    )
+
+    with pytest.raises(serializers.ValidationError) as project_error:
+        validate_record_data(
+            "project",
+            {
+                "project_name": "Bad Linked Product",
+                "project_type": "New Product",
+                "linked_product": str(supplier.pk),
+            },
+        )
+    assert project_error.value.detail["data"]["linked_product"][0] == (
+        "Referenced record must be a product."
+    )
+
+
+@pytest.mark.django_db
 def test_starter_configuration_publishes_cleanly():
     User = get_user_model()
     user = User.objects.create_user(username="starter-config-admin", password="test-pass")
@@ -148,3 +237,72 @@ def test_starter_configuration_publishes_cleanly():
 
     assert version.version == 1
     assert version.data == starter_configuration_data()
+
+
+@pytest.mark.django_db
+def test_publish_syncs_starter_workflows_and_dashboards_to_runtime_models(client):
+    User = get_user_model()
+    user = User.objects.create_superuser(
+        username="starter-runtime-admin",
+        password="test-pass",
+    )
+    draft = create_draft_from_current(user)
+
+    publish_draft(draft, user)
+
+    workflow = WorkflowDefinition.objects.get(
+        key="engineering_record_release",
+        object_type_key="product",
+    )
+    assert workflow.name == "Engineering Record Release"
+    assert workflow.initial_state == "draft"
+    assert workflow.version == 1
+    assert workflow.data["config_registry_managed"] is True
+    assert list(workflow.transitions.values_list("key", flat=True)) == [
+        "draft_to_engineering_review",
+        "engineering_review_to_quality_review",
+        "quality_review_to_released",
+    ]
+    product = Record.objects.create(
+        object_type_key="product",
+        code="PROD-WF-STARTER",
+        title="Starter Workflow Product",
+        schema_version=1,
+        data={"commercial_name": "Starter Workflow Product"},
+    )
+    instance = get_or_create_instance_for_record(product, user)
+    assert instance.definition == workflow
+
+    dashboard = Dashboard.objects.get(config__key="engineering_overview", owner__isnull=True)
+    assert dashboard.config["config_registry_managed"] is True
+    assert list(dashboard.widgets.values_list("widget_type", flat=True)) == [
+        "count_by_status",
+        "count_by_object_type",
+        "recent_changes",
+    ]
+    client.force_login(user)
+    response = client.get("/api/dashboards/engineering_overview/")
+    assert response.status_code == 200
+    assert [widget["widget_type"] for widget in response.json()["widgets"]] == [
+        "count_by_status",
+        "count_by_object_type",
+        "recent_changes",
+    ]
+
+    second_draft = create_draft_from_current(user)
+    second_draft.data["workflows"][0]["label"] = "Engineering Record Release Updated"
+    second_draft.data["dashboards"][0]["widgets"][0]["title"] = "Updated Records by Status"
+    second_draft.save()
+    publish_draft(second_draft, user)
+
+    workflow.refresh_from_db()
+    dashboard.refresh_from_db()
+    assert workflow.name == "Engineering Record Release Updated"
+    assert WorkflowDefinition.objects.filter(key="engineering_record_release").count() == 1
+    assert WorkflowTransition.objects.filter(definition=workflow).count() == 3
+    assert Dashboard.objects.filter(config__key="engineering_overview").count() == 1
+    assert DashboardWidget.objects.get(
+        dashboard=dashboard,
+        widget_type="count_by_status",
+        sort_order=0,
+    ).title == "Updated Records by Status"

@@ -4,6 +4,8 @@ import re
 
 PRODUCT_TEMPLATE_KEY = "product_standard"
 RAW_MATERIAL_TEMPLATE_KEY = "raw_material_standard"
+PROJECT_TEMPLATE_KEY = "project_standard"
+SUPPLIER_TEMPLATE_KEY = "supplier_standard"
 
 
 @dataclass(frozen=True)
@@ -31,16 +33,33 @@ TEMPLATE_CHILDREN = {
         "03_Compliance",
         "99_Working",
     ],
+    PROJECT_TEMPLATE_KEY: [
+        "01_Charter",
+        "02_Gate_Reviews",
+        "03_Trials",
+        "04_Customer_Inputs",
+        "99_Working",
+    ],
+    SUPPLIER_TEMPLATE_KEY: [
+        "01_Qualification",
+        "02_Compliance",
+        "03_Correspondence",
+        "99_Working",
+    ],
 }
 
 TEMPLATE_ROOTS = {
     PRODUCT_TEMPLATE_KEY: "Products",
     RAW_MATERIAL_TEMPLATE_KEY: "Raw_Materials",
+    PROJECT_TEMPLATE_KEY: "Projects",
+    SUPPLIER_TEMPLATE_KEY: "Suppliers",
 }
 
 DEFAULT_TEMPLATE_BY_OBJECT_TYPE = {
     "product": PRODUCT_TEMPLATE_KEY,
     "raw_material": RAW_MATERIAL_TEMPLATE_KEY,
+    "project": PROJECT_TEMPLATE_KEY,
+    "supplier": SUPPLIER_TEMPLATE_KEY,
 }
 
 

@@ -34,6 +34,8 @@ The starter workflows are:
 
 Treat workflow keys as stable identifiers. You can rename labels for local wording, but changing keys can break saved references and reports.
 
+Publishing configuration bootstraps these starter definitions into the runtime workflow tables. Runtime rows created from configuration are marked as config-managed and are updated by later publishes; manually created runtime workflows with conflicting keys are left untouched.
+
 ## Folder Templates
 
 The starter managed-folder templates are:
@@ -47,9 +49,11 @@ The starter managed-folder templates are:
 
 Keep folder patterns deterministic and based on stable record values such as code and title. Avoid including dates or status values that may change after folder creation.
 
+Managed folder generation supports the product, raw material, project, and supplier starter templates at runtime.
+
 ## Dashboards
 
-The starter dashboard definitions are configuration payloads for operational reporting:
+The starter dashboard definitions are published into global runtime dashboards for operational reporting:
 
 | Dashboard | Main widgets |
 | --- | --- |
@@ -59,6 +63,8 @@ The starter dashboard definitions are configuration payloads for operational rep
 | Missing Data | Product records missing status notes and raw materials missing required documents. |
 
 Dashboard widgets use the reports widget vocabulary: `count_by_status`, `count_by_object_type`, `overdue_project_tasks`, `missing_required_documents`, `recent_changes`, and `workflow_bottlenecks`.
+
+Runtime dashboards created from configuration are marked as config-managed and are updated by later publishes. User-owned dashboards and unmanaged global dashboards are not overwritten.
 
 ## Roles And Permissions
 

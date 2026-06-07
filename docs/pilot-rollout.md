@@ -35,7 +35,7 @@ Duration: 1 to 2 weeks.
 Tasks:
 
 1. Install the application in a pilot environment.
-2. Publish the starter configuration.
+2. Publish the starter configuration, which also bootstraps config-managed runtime workflows and global dashboards.
 3. Configure roles, groups, and object permissions.
 4. Confirm backups and complete one restore drill.
 5. Pick pilot records: 5 to 10 products, 10 to 20 raw materials, active suppliers, and 2 to 3 active projects.
@@ -132,12 +132,13 @@ Before pilot users begin:
 2. Object fields match the pilot data map.
 3. Roles and permissions match the access matrix.
 4. At least one user from each pilot role can sign in.
-5. Managed folder generation works for product and raw material records.
-6. Documents can be uploaded, attached, viewed, and audited.
-7. Dashboards load for pilot users with expected permission filtering.
-8. Import templates match current field keys.
-9. Backups run successfully and restore has been tested.
-10. Audit logs are visible to authorized admins.
+5. Managed folder generation works for product, raw material, project, and supplier records.
+6. Starter workflows are visible from pilot records that use them.
+7. Documents can be uploaded, attached, viewed, and audited.
+8. Dashboards load for pilot users with expected permission filtering.
+9. Import templates match current field keys.
+10. Backups run successfully and restore has been tested.
+11. Audit logs are visible to authorized admins.
 
 After each workflow test:
 

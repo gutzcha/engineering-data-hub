@@ -92,7 +92,7 @@
           "label": "Supplier",
           "type": "record_ref",
           "required": true,
-          "reference_target_type": "supplier"
+          "target_object_type": "supplier"
         },
         {
           "key": "melt_flow_index",
@@ -153,7 +153,7 @@
           "label": "Product",
           "type": "record_ref",
           "required": true,
-          "reference_target_type": "product"
+          "target_object_type": "product"
         },
         {
           "key": "revision",
@@ -294,7 +294,7 @@
           "label": "Linked Product",
           "type": "record_ref",
           "required": false,
-          "reference_target_type": "product"
+          "target_object_type": "product"
         }
       ]
     },
