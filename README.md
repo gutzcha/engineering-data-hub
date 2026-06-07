@@ -37,3 +37,30 @@ The development override exposes:
 - Meilisearch: `http://localhost:7700`
 
 PostgreSQL is intentionally kept on the internal Docker network by default.
+
+## Verification
+
+Run the backend and frontend test suites through Compose:
+
+```bash
+make test
+make frontend-test
+```
+
+Run the focused backend traceability acceptance flow:
+
+```bash
+docker compose -f compose.yaml -f compose.dev.yaml run --rm --no-deps -e DJANGO_SETTINGS_MODULE=plastic_hub.settings.test backend pytest tests/e2e/test_traceability_flow.py
+```
+
+Run the Playwright traceability flow against the Caddy/proxy origin after the local stack is up:
+
+```bash
+npx playwright test frontend/e2e/traceability.spec.ts
+```
+
+The Playwright test defaults to `https://plastic-hub.local` and can be pointed elsewhere with `PLAYWRIGHT_BASE_URL`. If Meilisearch is not exposed on `http://localhost:7700`, set `PLAYWRIGHT_MEILI_URL`.
+
+## Release Package
+
+Use [docs/release-checklist.md](docs/release-checklist.md) before pilot cutover or production release. It covers Compose build/start, migrations, starter configuration publish, admin user setup, writable backups, HTTPS certificate mounting, health checks, Meilisearch indexing, and the traceability acceptance flow.
