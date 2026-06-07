@@ -16,6 +16,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 
 import { DataTable } from "../components/DataTable";
 import { StatusBadge } from "../components/StatusBadge";
+import { ConfigWorkspace } from "../features/admin-config/ConfigWorkspace";
 
 export type NavigationItem = {
   label: string;
@@ -249,7 +250,9 @@ export function AppRoutes() {
         <Route
           key={item.path}
           path={item.path}
-          element={<PlaceholderPage item={item} />}
+          element={
+            item.path === "/admin" ? <ConfigWorkspace /> : <PlaceholderPage item={item} />
+          }
         />
       ))}
       <Route path="*" element={<Navigate to="/" replace />} />
