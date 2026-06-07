@@ -184,49 +184,82 @@ def test_review_routes_update_status(client, user_factory, generated_folder):
 
 
 @pytest.mark.django_db
-def test_link_document_returns_not_implemented_until_documents_app_exists(
-    client,
-    user_factory,
-    generated_folder,
-):
+def test_assign_folder_event_updates_assignee_and_audits(client, user_factory, generated_folder):
+    from apps.audit.models import AuditEvent
+
     event = FolderChangeEvent.objects.create(
         event_type="added",
-        path=f"{generated_folder.relative_path}/01_Specifications/link.txt",
-        managed_folder=generated_folder,
+        path=f"{generated_folder.relative_path}/01_Specifications/assign.txt",
+        detected_hash="abc",
         matched_record=generated_folder.record,
-    )
-    client.force_login(user_factory("folder-link-admin", is_superuser=True))
-
-    response = client.post(f"/api/folder-events/{event.pk}/link-document/")
-
-    assert response.status_code == 501
-    event.refresh_from_db()
-    assert event.review_status == "pending"
-
-
-@pytest.mark.django_db
-def test_link_document_with_document_id_does_not_change_status(
-    client,
-    user_factory,
-    generated_folder,
-):
-    event = FolderChangeEvent.objects.create(
-        event_type="added",
-        path=f"{generated_folder.relative_path}/01_Specifications/link.txt",
         managed_folder=generated_folder,
-        matched_record=generated_folder.record,
     )
-    client.force_login(user_factory("folder-link-id-admin", is_superuser=True))
+    admin = user_factory("folder-assign-admin", is_superuser=True)
+    assignee = user_factory("folder-assignee")
+    client.force_login(admin)
 
     response = client.post(
-        f"/api/folder-events/{event.pk}/link-document/",
-        {"document_id": "future-doc"},
+        f"/api/folder-events/{event.pk}/assign/",
+        {"assignee": assignee.pk},
         content_type="application/json",
     )
 
-    assert response.status_code == 501
     event.refresh_from_db()
-    assert event.review_status == "pending"
+    assert response.status_code == 200
+    assert response.json()["assigned_to"] == assignee.pk
+    assert response.json()["assignee_username"] == "folder-assignee"
+    assert event.assigned_to == assignee
+    audit_event = AuditEvent.objects.get(action="folder_event.assigned")
+    assert audit_event.before["assigned_to_id"] is None
+    assert audit_event.after["assigned_to_id"] == assignee.pk
+
+    clear_response = client.post(
+        f"/api/folder-events/{event.pk}/assign/",
+        {"assigned_to": ""},
+        content_type="application/json",
+    )
+
+    event.refresh_from_db()
+    assert clear_response.status_code == 200
+    assert clear_response.json()["assigned_to"] is None
+    assert event.assigned_to is None
+
+
+@pytest.mark.django_db
+def test_link_document_creates_metadata_document_and_marks_event_linked(
+    client,
+    user_factory,
+    generated_folder,
+):
+    from apps.audit.models import AuditEvent
+    from apps.documents.models import Document
+
+    event = FolderChangeEvent.objects.create(
+        event_type="added",
+        path=f"{generated_folder.relative_path}/01_Specifications/link.txt",
+        managed_folder=generated_folder,
+        matched_record=generated_folder.record,
+    )
+    admin = user_factory("folder-link-admin", is_superuser=True)
+    client.force_login(admin)
+
+    response = client.post(f"/api/folder-events/{event.pk}/link-document/")
+
+    assert response.status_code == 201
+    body = response.json()
+    document = Document.objects.get(pk=body["document"]["id"])
+    event.refresh_from_db()
+    assert document.title == "link.txt"
+    assert document.document_type == "folder_event"
+    assert document.owner_record == generated_folder.record
+    assert document.folder == generated_folder
+    assert document.current_revision is None
+    assert event.review_status == "linked"
+    assert event.reviewer == admin
+    assert body["event"]["review_status"] == "linked"
+    audit_event = AuditEvent.objects.get(action="folder_event.document_linked")
+    assert audit_event.after["review_status"] == "linked"
+    assert audit_event.after["linked_document_id"] == document.pk
 
 
 @pytest.mark.django_db
@@ -313,6 +346,38 @@ def test_review_inbox_filters_events_by_view_permission(client, user_factory):
     assert hidden_response.status_code == 404
     assert supplier_response.status_code == 404
     assert unmatched_response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_folder_event_detail_includes_non_pending_events_for_authorized_viewer(client, user_factory):
+    product = Record.objects.create(
+        object_type_key="product",
+        code="PROD-000031",
+        title="Accepted Product",
+        schema_version=1,
+        data={},
+    )
+    accepted = FolderChangeEvent.objects.create(
+        event_type="added",
+        path="Products/PROD-000031/accepted.txt",
+        matched_record=product,
+        review_status=FolderChangeEvent.ReviewStatus.ACCEPTED,
+    )
+    ObjectPermission.objects.create(
+        role_name="Accepted Folder Viewer",
+        object_type_key="product",
+        can_view=True,
+    )
+    client.force_login(user_factory("accepted-folder-viewer", "Accepted Folder Viewer"))
+
+    list_response = client.get("/api/folder-events/")
+    detail_response = client.get(f"/api/folder-events/{accepted.pk}/")
+
+    assert list_response.status_code == 200
+    assert list_response.json() == []
+    assert detail_response.status_code == 200
+    assert detail_response.json()["id"] == accepted.pk
+    assert detail_response.json()["review_status"] == "accepted"
 
 
 @pytest.mark.django_db

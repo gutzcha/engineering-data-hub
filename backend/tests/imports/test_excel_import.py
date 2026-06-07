@@ -112,6 +112,10 @@ def workbook_file(rows, name="records.xlsx"):
     return ContentFile(output.getvalue(), name=name)
 
 
+def csv_file(content, name="records.csv"):
+    return ContentFile(content.encode("utf-8"), name=name)
+
+
 def import_mapping():
     return {
         "columns": {
@@ -165,6 +169,28 @@ def test_excel_dry_run_reports_creates_updates_and_row_errors(
     assert errors_by_row[5]["errors"]["category"] == ["Value must be one of: film, resin."]
     assert errors_by_row[6]["errors"]["code"] == ["Duplicate code in import file."]
     assert errors_by_row[7]["errors"]["code"] == ["Duplicate code in import file."]
+
+
+@pytest.mark.django_db
+def test_csv_dry_run_uses_header_mapping(active_import_config, import_permissions):
+    from apps.imports.models import ImportJob
+    from apps.imports.services import dry_run_import
+
+    job = ImportJob.objects.create(
+        source_file=csv_file(
+            "Code,Commercial Name,Category\nPROD-000101,CSV Film,film\n",
+        ),
+        target_object_type="product",
+        mapping=import_mapping(),
+    )
+
+    result = dry_run_import(job)
+
+    assert result["summary"] == {"create": 1, "update": 0, "errors": 0}
+    assert result["creates"][0]["data"] == {
+        "commercial_name": "CSV Film",
+        "category": "film",
+    }
 
 
 @pytest.mark.django_db

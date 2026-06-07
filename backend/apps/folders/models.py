@@ -111,6 +111,13 @@ class FolderChangeEvent(models.Model):
         on_delete=models.SET_NULL,
         related_name="reviewed_folder_events",
     )
+    assigned_to = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="assigned_folder_events",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

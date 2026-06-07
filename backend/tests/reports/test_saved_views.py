@@ -426,6 +426,30 @@ def test_dashboard_detail_handles_malformed_widget_config(client, user_factory):
 
 
 @pytest.mark.django_db
+def test_dashboard_detail_can_be_loaded_by_config_key(client, user_factory):
+    user = user_factory("dashboard-key-viewer")
+    try:
+        from apps.reports.models import Dashboard, DashboardWidget
+    except ModuleNotFoundError:
+        pytest.fail("reports models are missing")
+
+    dashboard = Dashboard.objects.create(name="Quality Key", config={"key": "quality_operations"})
+    DashboardWidget.objects.create(
+        dashboard=dashboard,
+        title="By type",
+        widget_type="count_by_object_type",
+    )
+
+    client.force_login(user)
+    response = client.get("/api/dashboards/quality_operations/")
+
+    assert response.status_code == 200
+    assert response.json()["id"] == dashboard.pk
+    assert response.json()["name"] == "Quality Key"
+    assert response.json()["config"] == {"key": "quality_operations"}
+
+
+@pytest.mark.django_db
 def test_dashboard_record_widgets_are_permission_filtered(client, user_factory, report_permissions):
     viewer = user_factory("dashboard-viewer", "Product Viewer")
     product = create_record("PROD-DASH", "product", "Dashboard Product", status=Record.Status.RELEASED)

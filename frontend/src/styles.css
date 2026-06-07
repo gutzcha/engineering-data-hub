@@ -886,6 +886,132 @@ select {
   min-width: 0;
 }
 
+.import-page,
+.dashboard-page,
+.folder-review-page,
+.audit-page {
+  min-width: 0;
+}
+
+.import-setup-grid,
+.dashboard-controls,
+.saved-view-runner {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.import-folder-toggle {
+  align-self: end;
+}
+
+.mapping-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.import-results-grid {
+  grid-template-columns: 1fr;
+}
+
+.import-results-grid .admin-status-row {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.import-error-item {
+  justify-content: flex-start;
+}
+
+.dashboard-widget-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.dashboard-widget-body {
+  align-content: start;
+}
+
+.dashboard-widget-item {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.widget-count {
+  color: #17201d;
+  font-size: 18px;
+}
+
+.folder-event-actions {
+  display: flex;
+  min-width: 420px;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: end;
+}
+
+.folder-event-assignee {
+  width: 120px;
+}
+
+.audit-timeline {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px 16px;
+}
+
+.audit-item {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, auto);
+  gap: 10px 14px;
+  border: 1px solid #e3e7e3;
+  border-radius: 6px;
+  background: #fbfbf8;
+  padding: 12px;
+}
+
+.audit-item-main,
+.audit-object-link,
+.audit-change-list div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.audit-item-main strong {
+  color: #17201d;
+}
+
+.audit-item-main span,
+.audit-object-link span,
+.audit-change-list span {
+  color: #65716b;
+  font-size: 12px;
+}
+
+.audit-object-link {
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: center;
+}
+
+.audit-change-list {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.audit-change-list code {
+  overflow-wrap: anywhere;
+  color: #25302c;
+  font-family:
+    "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 12px;
+  white-space: normal;
+}
+
 .task-title-cell {
   display: grid;
   min-width: 0;
@@ -1128,7 +1254,16 @@ select {
   .filter-grid,
   .detail-grid,
   .search-results-grid,
-  .workflow-state-grid {
+  .workflow-state-grid,
+  .mapping-grid,
+  .dashboard-widget-grid,
+  .audit-change-list {
+    grid-template-columns: 1fr;
+  }
+
+  .import-setup-grid,
+  .dashboard-controls,
+  .saved-view-runner {
     grid-template-columns: 1fr;
   }
 }
@@ -1158,8 +1293,13 @@ select {
   .search-result,
   .timeline-task,
   .dependency-row,
-  .project-link-row {
+  .project-link-row,
+  .audit-item {
     grid-template-columns: 1fr;
+  }
+
+  .folder-event-actions {
+    min-width: 0;
   }
 
   .workspace-header h1 {

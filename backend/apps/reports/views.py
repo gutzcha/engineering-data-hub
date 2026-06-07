@@ -88,8 +88,9 @@ class DashboardDetailView(APIView):
     permission_classes = [IsAuthenticated]
     http_method_names = ["get", "head", "options"]
 
-    def get(self, request, pk):
-        dashboard = get_object_or_404(_visible_dashboards(request.user).prefetch_related("widgets"), pk=pk)
+    def get(self, request, identifier):
+        dashboards = _visible_dashboards(request.user).prefetch_related("widgets")
+        dashboard = _dashboard_by_identifier(dashboards, identifier)
         return Response(
             {
                 "id": dashboard.pk,
@@ -125,6 +126,15 @@ def _visible_dashboards(user):
     if _is_system_admin(user):
         return dashboards
     return dashboards.filter(Q(owner__isnull=True) | Q(owner=user))
+
+
+def _dashboard_by_identifier(queryset, identifier):
+    identifier = str(identifier)
+    if identifier.isdigit():
+        dashboard = queryset.filter(pk=int(identifier)).first()
+        if dashboard is not None:
+            return dashboard
+    return get_object_or_404(queryset, config__key=identifier)
 
 
 def _is_system_admin(user):

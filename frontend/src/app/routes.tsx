@@ -5,22 +5,28 @@ import {
   Download,
   FileText,
   FolderKanban,
+  History,
   Home,
   Plus,
   Search,
   Settings,
-  SlidersHorizontal
+  SlidersHorizontal,
+  UploadCloud
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { Navigate, Route, Routes, useParams } from "react-router-dom";
+import { Link, Navigate, Route, Routes, useParams } from "react-router-dom";
 
 import { DataTable } from "../components/DataTable";
 import { StatusBadge } from "../components/StatusBadge";
 import { ConfigWorkspace } from "../features/admin-config/ConfigWorkspace";
+import { AuditTimeline } from "../features/audit/AuditTimeline";
+import { DashboardPage } from "../features/dashboards/DashboardPage";
 import {
   DocumentDetailPage,
   DocumentLibraryPage
 } from "../features/documents/DocumentPanel";
+import { FolderReviewInbox } from "../features/folders/FolderReviewInbox";
+import { ImportWizard } from "../features/imports/ImportWizard";
 import { ProjectDetail } from "../features/projects/ProjectDetail";
 import { ProjectList } from "../features/projects/ProjectList";
 import { RecordDetail } from "../features/records/RecordDetail";
@@ -55,6 +61,12 @@ export const navigationItems: NavigationItem[] = [
     description: "Engineering project workspaces"
   },
   {
+    label: "Imports",
+    path: "/imports",
+    icon: UploadCloud,
+    description: "Excel and CSV intake"
+  },
+  {
     label: "Documents",
     path: "/documents",
     icon: FileText,
@@ -71,6 +83,12 @@ export const navigationItems: NavigationItem[] = [
     path: "/dashboards",
     icon: BarChart3,
     description: "Operational reporting"
+  },
+  {
+    label: "Audit",
+    path: "/audit",
+    icon: History,
+    description: "Append-only system history"
   },
   {
     label: "Tasks",
@@ -288,6 +306,25 @@ function SearchTargetPlaceholder({
   );
 }
 
+function TaskWorkspace() {
+  return (
+    <div className="page-stack">
+      <TaskInbox />
+      <section className="table-panel" aria-labelledby="folder-review-access-title">
+        <div className="panel-heading">
+          <div>
+            <p className="section-kicker">Folder review</p>
+            <h2 id="folder-review-access-title">Managed Folder Review</h2>
+          </div>
+          <Link className="button button-secondary" to="/tasks/folder-events">
+            Open Inbox
+          </Link>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export function AppRoutes() {
   return (
     <Routes>
@@ -296,23 +333,30 @@ export function AppRoutes() {
       <Route path="/records/:recordId" element={<RecordDetail />} />
       <Route path="/projects" element={<ProjectList />} />
       <Route path="/projects/:projectId" element={<ProjectDetail />} />
+      <Route path="/imports" element={<ImportWizard />} />
       <Route path="/documents" element={<DocumentLibraryPage />} />
       <Route path="/documents/:documentId" element={<DocumentDetailPage />} />
-      <Route path="/tasks" element={<TaskInbox />} />
-      <Route
-        path="/tasks/folder-events/:eventId"
-        element={
-          <SearchTargetPlaceholder
-            description="Folder review event search target"
-            idParam="eventId"
-            label="Folder Event"
-          />
-        }
-      />
+      <Route path="/tasks" element={<TaskWorkspace />} />
+      <Route path="/tasks/folder-events" element={<FolderReviewInbox />} />
+      <Route path="/tasks/folder-events/:eventId" element={<FolderReviewInbox />} />
       <Route path="/search" element={<SearchPage />} />
+      <Route path="/dashboards" element={<DashboardPage />} />
+      <Route path="/audit" element={<AuditTimeline />} />
       {navigationItems
         .slice(1)
-        .filter((item) => !["/records", "/projects", "/documents", "/search", "/tasks"].includes(item.path))
+        .filter(
+          (item) =>
+            ![
+              "/records",
+              "/projects",
+              "/imports",
+              "/documents",
+              "/search",
+              "/dashboards",
+              "/audit",
+              "/tasks"
+            ].includes(item.path)
+        )
         .map((item) => (
         <Route
           key={item.path}

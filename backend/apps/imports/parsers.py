@@ -1,3 +1,5 @@
+import csv
+from pathlib import Path
 from zipfile import BadZipFile
 
 from openpyxl import load_workbook
@@ -11,6 +13,9 @@ class XlsxParseError(ValueError):
 def parse_xlsx_rows(source_file):
     if not source_file:
         raise XlsxParseError("Import file must be a valid .xlsx workbook.")
+
+    if _is_csv_file(source_file):
+        return _parse_csv_rows(source_file)
 
     source_file.open("rb")
     try:
@@ -43,6 +48,33 @@ def parse_xlsx_rows(source_file):
             }
         )
     return parsed
+
+
+def _parse_csv_rows(source_file):
+    source_file.open("rb")
+    try:
+        content = source_file.read().decode("utf-8-sig")
+    except UnicodeDecodeError as error:
+        raise XlsxParseError("Import file must be a valid UTF-8 .csv file.") from error
+    finally:
+        source_file.close()
+
+    reader = csv.DictReader(content.splitlines())
+    headers = [header for header in (reader.fieldnames or []) if header]
+    if not headers:
+        raise XlsxParseError("Import file must contain a header row.")
+
+    parsed = []
+    for index, row in enumerate(reader, start=2):
+        values = {header: _cell_to_value(row.get(header)) for header in headers}
+        if all(value is None or value == "" for value in values.values()):
+            continue
+        parsed.append({"row_number": index, "values": values})
+    return parsed
+
+
+def _is_csv_file(source_file):
+    return Path(getattr(source_file, "name", "")).suffix.lower() == ".csv"
 
 
 def _cell_to_value(value):
