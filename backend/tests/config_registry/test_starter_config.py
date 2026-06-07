@@ -7,11 +7,16 @@ from rest_framework import serializers
 
 from apps.config_registry.seed import starter_configuration_data
 from apps.config_registry.services import create_draft_from_current, publish_draft, validate_draft
+from apps.documents.models import Document
 from apps.records.models import Record
 from apps.records.validation import validate_record_data
 from apps.reports.models import Dashboard, DashboardWidget
-from apps.workflows.engine import get_or_create_instance_for_record
-from apps.workflows.models import WorkflowDefinition, WorkflowTransition
+from apps.workflows.engine import (
+    WorkflowGuardError,
+    get_or_create_instance_for_record,
+    perform_transition,
+)
+from apps.workflows.models import WorkflowDefinition, WorkflowTask, WorkflowTransition
 
 
 FIXTURE_PATH = (
@@ -306,3 +311,113 @@ def test_publish_syncs_starter_workflows_and_dashboards_to_runtime_models(client
         widget_type="count_by_status",
         sort_order=0,
     ).title == "Updated Records by Status"
+
+
+@pytest.mark.django_db
+def test_bootstrapped_starter_workflow_enforces_guards_and_task_roles():
+    User = get_user_model()
+    user = User.objects.create_superuser(
+        username="starter-guard-admin",
+        password="test-pass",
+    )
+    draft = create_draft_from_current(user)
+    publish_draft(draft, user)
+    product = Record.objects.create(
+        object_type_key="product",
+        code="PROD-WF-GUARD",
+        title="Guard Product",
+        schema_version=1,
+        data={"commercial_name": "Guard Product"},
+    )
+    spec = Record.objects.create(
+        object_type_key="product_spec",
+        code="SPEC-WF-GUARD",
+        title="Guard Spec",
+        schema_version=1,
+        data={"spec_number": "SPEC-WF-GUARD", "product": str(product.pk)},
+    )
+    instance = get_or_create_instance_for_record(spec, user)
+
+    with pytest.raises(WorkflowGuardError) as missing_revision:
+        perform_transition(str(instance.pk), "draft_to_technical_review", user.pk)
+
+    assert "revision" in str(missing_revision.value)
+    spec.data["revision"] = "A"
+    spec.save(update_fields=["data", "updated_at"])
+    instance = perform_transition(str(instance.pk), "draft_to_technical_review", user.pk)
+    technical_task = WorkflowTask.objects.get(instance=instance, key="technical_spec_review")
+    assert technical_task.assignee_role == "Engineering Reviewer"
+
+    with pytest.raises(WorkflowGuardError) as missing_task_and_document:
+        perform_transition(str(instance.pk), "technical_review_to_approval", user.pk)
+
+    assert "technical_spec_review" in str(missing_task_and_document.value)
+    assert "controlled_document" in str(missing_task_and_document.value)
+
+    technical_task.mark_done(user)
+    Document.objects.create(
+        title="Controlled Spec",
+        owner_record=spec,
+        document_type="controlled_document",
+    )
+    instance = perform_transition(str(instance.pk), "technical_review_to_approval", user.pk)
+    approval_task = WorkflowTask.objects.get(instance=instance, key="approver_signoff")
+    assert approval_task.assignee_role == "Quality Reviewer"
+
+    with pytest.raises(WorkflowGuardError) as missing_approval_task:
+        perform_transition(str(instance.pk), "approval_to_released", user.pk)
+
+    assert "approver_signoff" in str(missing_approval_task.value)
+    approval_task.mark_done(user)
+    instance = perform_transition(str(instance.pk), "approval_to_released", user.pk)
+    assert instance.state == "released"
+
+
+@pytest.mark.django_db
+def test_publish_retires_removed_config_managed_runtime_rows():
+    User = get_user_model()
+    user = User.objects.create_superuser(
+        username="starter-stale-admin",
+        password="test-pass",
+    )
+    draft = create_draft_from_current(user)
+    publish_draft(draft, user)
+    stale_workflow = WorkflowDefinition.objects.get(key="raw_material_approval")
+    assert stale_workflow.is_active is True
+    assert Dashboard.objects.filter(config__key="document_health").exists()
+    unmanaged_workflow = WorkflowDefinition.objects.create(
+        key="unmanaged_quality_review",
+        name="Unmanaged Quality Review",
+        object_type_key="product",
+        initial_state="draft",
+        data={},
+    )
+    unmanaged_dashboard = Dashboard.objects.create(
+        name="Unmanaged Dashboard",
+        config={"key": "unmanaged_dashboard"},
+    )
+
+    second_draft = create_draft_from_current(user)
+    second_draft.data["workflows"] = [
+        workflow
+        for workflow in second_draft.data["workflows"]
+        if workflow["key"] != "raw_material_approval"
+    ]
+    second_draft.data["dashboards"] = [
+        dashboard
+        for dashboard in second_draft.data["dashboards"]
+        if dashboard["key"] != "document_health"
+    ]
+    second_draft.save()
+    publish_draft(second_draft, user)
+
+    stale_workflow.refresh_from_db()
+    unmanaged_workflow.refresh_from_db()
+    unmanaged_dashboard.refresh_from_db()
+    assert stale_workflow.is_active is False
+    assert not Dashboard.objects.filter(
+        config__key="document_health",
+        config__config_registry_managed=True,
+    ).exists()
+    assert unmanaged_workflow.is_active is True
+    assert Dashboard.objects.filter(pk=unmanaged_dashboard.pk).exists()

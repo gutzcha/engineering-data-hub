@@ -453,6 +453,7 @@ def _sync_runtime_workflows(configuration_version, data):
         if isinstance(workflow, dict) and _is_snake_case_key(workflow.get("key"))
     }
     assignments = _workflow_assignments(data, workflow_by_key)
+    current_runtime_keys = set()
 
     for workflow_key, object_type_keys in assignments.items():
         workflow = workflow_by_key[workflow_key]
@@ -466,6 +467,7 @@ def _sync_runtime_workflows(configuration_version, data):
             existing = WorkflowDefinition.objects.filter(key=runtime_key).first()
             if existing and not _is_config_registry_managed(existing.data):
                 continue
+            current_runtime_keys.add(runtime_key)
 
             definition, _created = WorkflowDefinition.objects.update_or_create(
                 key=runtime_key,
@@ -484,12 +486,15 @@ def _sync_runtime_workflows(configuration_version, data):
                 },
             )
             WorkflowTransition.objects.filter(definition=definition).delete()
-            for sort_order, transition in enumerate(_runtime_transitions(workflow)):
+            for sort_order, transition in enumerate(
+                _runtime_transitions(workflow, object_type_key, data)
+            ):
                 WorkflowTransition.objects.create(
                     definition=definition,
                     sort_order=sort_order,
                     **transition,
                 )
+    _deactivate_stale_config_managed_workflows(current_runtime_keys)
 
 
 def _workflow_assignments(data, workflow_by_key):
@@ -547,7 +552,7 @@ def _initial_workflow_state(workflow):
     return "draft"
 
 
-def _runtime_transitions(workflow):
+def _runtime_transitions(workflow, object_type_key, data):
     transitions = []
     for transition in workflow.get("transitions", []):
         if not isinstance(transition, dict):
@@ -562,7 +567,7 @@ def _runtime_transitions(workflow):
                 "label": transition.get("label") or _transition_label(from_state, to_state),
                 "from_state": from_state,
                 "to_state": to_state,
-                "guards": _runtime_transition_guards(transition),
+                "guards": _runtime_transition_guards(transition, object_type_key, data),
                 "task_templates": _runtime_transition_task_templates(transition),
             }
         )
@@ -573,14 +578,79 @@ def _transition_label(from_state, to_state):
     return f"{from_state.replace('_', ' ').title()} to {to_state.replace('_', ' ').title()}"
 
 
-def _runtime_transition_guards(transition):
+def _runtime_transition_guards(transition, object_type_key, data):
     guards = transition.get("guards")
     if isinstance(guards, dict):
         return copy.deepcopy(guards)
     guard = transition.get("guard")
     if isinstance(guard, str) and guard:
-        return {"configured_guard": guard}
+        return _symbolic_guard_to_runtime_guard(guard, object_type_key, data)
     return {}
+
+
+def _symbolic_guard_to_runtime_guard(guard, object_type_key, data):
+    if guard == "required_fields_complete":
+        return {"required_fields": _required_field_keys(data, object_type_key)}
+    if guard == "engineering_approval":
+        return {"required_tasks_complete": ["engineering_review"]}
+    if guard == "quality_approval":
+        return {"required_tasks_complete": ["quality_review"]}
+    if guard == "spec_number_and_product_required":
+        return {"required_fields": _field_keys_present(data, object_type_key, ["spec_number", "product", "revision"])}
+    if guard == "controlled_document_attached":
+        return {
+            "required_tasks_complete": ["technical_spec_review"],
+            "required_document_types": ["controlled_document"],
+        }
+    if guard == "approval_complete":
+        return {"required_tasks_complete": ["approver_signoff"]}
+    if guard == "supplier_selected":
+        return {"required_fields": _field_keys_present(data, object_type_key, ["supplier_material_code", "material_family", "supplier"])}
+    if guard == "compliance_documents_available":
+        return {
+            "required_tasks_complete": ["supplier_qualification_review"],
+            "required_document_types": ["tds", "sds", "compliance"],
+        }
+    if guard == "technical_and_quality_approval":
+        return {"required_tasks_complete": ["material_technical_review"]}
+    if guard == "project_owner_assigned":
+        return {"required_fields": _field_keys_present(data, object_type_key, ["project_name", "project_type", "project_owner"])}
+    if guard == "scope_and_target_launch_confirmed":
+        return {
+            "required_fields": _field_keys_present(data, object_type_key, ["target_launch_date"]),
+            "required_tasks_complete": ["gate_0_scoping_review"],
+        }
+    if guard == "trial_and_spec_package_ready":
+        return {"required_tasks_complete": ["gate_1_development_approval"]}
+    if guard == "launch_approval_complete":
+        return {"required_tasks_complete": ["gate_2_launch_readiness"]}
+    return {}
+
+
+def _required_field_keys(data, object_type_key):
+    for object_type in data.get("object_types", []):
+        if isinstance(object_type, dict) and object_type.get("key") == object_type_key:
+            return [
+                field["key"]
+                for field in object_type.get("fields", [])
+                if isinstance(field, dict)
+                and field.get("required") is True
+                and _is_snake_case_key(field.get("key"))
+            ]
+    return []
+
+
+def _field_keys_present(data, object_type_key, candidate_keys):
+    field_keys = set()
+    for object_type in data.get("object_types", []):
+        if isinstance(object_type, dict) and object_type.get("key") == object_type_key:
+            field_keys = {
+                field.get("key")
+                for field in object_type.get("fields", [])
+                if isinstance(field, dict)
+            }
+            break
+    return [field_key for field_key in candidate_keys if field_key in field_keys]
 
 
 def _runtime_transition_task_templates(transition):
@@ -593,16 +663,39 @@ def _runtime_transition_task_templates(transition):
             {
                 "key": _snake_case_token(task_template),
                 "title": task_template,
+                "assignee_role": _starter_task_assignee_role(task_template),
                 "required": True,
             }
         ]
     return []
 
 
+def _starter_task_assignee_role(task_template):
+    task_text = task_template.lower()
+    if "supplier" in task_text:
+        return "Supplier Quality"
+    if "gate" in task_text or "project" in task_text or "launch" in task_text:
+        return "Project Reviewer"
+    if "quality" in task_text or "approver" in task_text or "approval" in task_text or "approve" in task_text:
+        return "Quality Reviewer"
+    if "technical" in task_text or "engineering" in task_text or "material" in task_text:
+        return "Engineering Reviewer"
+    return "Engineering Reviewer"
+
+
+def _deactivate_stale_config_managed_workflows(current_runtime_keys):
+    from apps.workflows.models import WorkflowDefinition
+
+    WorkflowDefinition.objects.filter(data__config_registry_managed=True).exclude(
+        key__in=current_runtime_keys
+    ).update(is_active=False)
+
+
 def _sync_runtime_dashboards(configuration_version, data):
     from apps.reports.models import Dashboard, DashboardWidget
 
     valid_widget_types = set(DashboardWidget.WidgetType.values)
+    current_dashboard_keys = set()
     for dashboard_definition in data.get("dashboards", []):
         if not isinstance(dashboard_definition, dict):
             continue
@@ -622,6 +715,7 @@ def _sync_runtime_dashboards(configuration_version, data):
             ).exists()
             if unmanaged_dashboard_exists:
                 continue
+            current_dashboard_keys.add(dashboard_key)
             dashboard = Dashboard.objects.create(
                 name=dashboard_definition.get("name")
                 or dashboard_definition.get("label")
@@ -630,6 +724,7 @@ def _sync_runtime_dashboards(configuration_version, data):
                 config=_managed_dashboard_config(configuration_version, dashboard_definition),
             )
         else:
+            current_dashboard_keys.add(dashboard_key)
             dashboard.name = (
                 dashboard_definition.get("name") or dashboard_definition.get("label") or dashboard_key
             )
@@ -654,6 +749,16 @@ def _sync_runtime_dashboards(configuration_version, data):
                 config=copy.deepcopy(widget.get("config") if isinstance(widget.get("config"), dict) else {}),
                 sort_order=sort_order,
             )
+    _delete_stale_config_managed_dashboards(current_dashboard_keys)
+
+
+def _delete_stale_config_managed_dashboards(current_dashboard_keys):
+    from apps.reports.models import Dashboard
+
+    Dashboard.objects.filter(
+        owner__isnull=True,
+        config__config_registry_managed=True,
+    ).exclude(config__key__in=current_dashboard_keys).delete()
 
 
 def _managed_dashboard_config(configuration_version, dashboard_definition):
