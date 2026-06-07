@@ -313,3 +313,42 @@ def test_review_inbox_filters_events_by_view_permission(client, user_factory):
     assert hidden_response.status_code == 404
     assert supplier_response.status_code == 404
     assert unmatched_response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_folder_event_list_can_filter_to_one_record(client, user_factory):
+    first = Record.objects.create(
+        object_type_key="product",
+        code="PROD-000021",
+        title="First Product",
+        schema_version=1,
+        data={},
+    )
+    second = Record.objects.create(
+        object_type_key="product",
+        code="PROD-000022",
+        title="Second Product",
+        schema_version=1,
+        data={},
+    )
+    first_event = FolderChangeEvent.objects.create(
+        event_type="added",
+        path="Products/PROD-000021/spec.txt",
+        matched_record=first,
+    )
+    FolderChangeEvent.objects.create(
+        event_type="added",
+        path="Products/PROD-000022/spec.txt",
+        matched_record=second,
+    )
+    ObjectPermission.objects.create(
+        role_name="Product Folder Viewer",
+        object_type_key="product",
+        can_view=True,
+    )
+    client.force_login(user_factory("record-folder-viewer", "Product Folder Viewer"))
+
+    response = client.get(f"/api/folder-events/?record={first.pk}")
+
+    assert response.status_code == 200
+    assert [event["id"] for event in response.json()] == [first_event.pk]

@@ -16,6 +16,10 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
   return request<T>("POST", path, body);
 }
 
+export async function apiPostForm<T>(path: string, body: FormData): Promise<T> {
+  return request<T>("POST", path, body);
+}
+
 export async function apiPatch<T>(path: string, body: unknown): Promise<T> {
   return request<T>("PATCH", path, body);
 }
@@ -25,10 +29,16 @@ export async function apiDelete(path: string): Promise<void> {
 }
 
 async function request<T>(method: HttpMethod, path: string, body?: unknown): Promise<T> {
+  const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
   const response = await fetch(apiUrl(path), {
     method,
-    headers: body === undefined ? undefined : { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body)
+    headers: body === undefined || isFormData ? undefined : { "Content-Type": "application/json" },
+    body:
+      body === undefined
+        ? undefined
+        : isFormData
+          ? body
+          : JSON.stringify(body)
   });
 
   if (!response.ok) {

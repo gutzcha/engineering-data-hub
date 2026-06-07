@@ -489,7 +489,8 @@ select {
 }
 
 .field-control input,
-.field-control select {
+.field-control select,
+.field-control textarea {
   width: 100%;
   min-width: 0;
   min-height: 36px;
@@ -501,9 +502,14 @@ select {
 }
 
 .field-control input:disabled,
-.field-control select:disabled {
+.field-control select:disabled,
+.field-control textarea:disabled {
   background: #f3f4f2;
   color: #65716b;
+}
+
+.field-control textarea {
+  resize: vertical;
 }
 
 .field-control-wide {
@@ -669,6 +675,212 @@ select {
   padding: 4px 16px;
 }
 
+.filter-panel {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #d8ddd7;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 14px;
+}
+
+.search-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.active-filter-row,
+.record-action-row,
+.document-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.active-filter-row > span {
+  color: #65716b;
+  font-size: 13px;
+}
+
+.text-link {
+  color: #16453f;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.text-link:hover {
+  text-decoration: underline;
+}
+
+.record-detail {
+  min-width: 0;
+}
+
+.detail-grid,
+.search-results-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.detail-panel {
+  min-width: 0;
+}
+
+.record-panel-body {
+  display: grid;
+  gap: 14px;
+  padding: 14px 16px 16px;
+}
+
+.record-form-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.record-form-section {
+  display: grid;
+  gap: 10px;
+}
+
+.record-section-heading h3 {
+  margin: 0;
+  color: #17201d;
+  font-size: 15px;
+}
+
+.record-toggle {
+  align-self: end;
+  min-height: 36px;
+}
+
+.graph-list,
+.event-list,
+.document-list,
+.link-list,
+.search-result-list {
+  display: grid;
+  gap: 8px;
+}
+
+.graph-node,
+.event-item,
+.document-item,
+.search-result,
+.link-list a {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  border: 1px solid #e3e7e3;
+  border-radius: 6px;
+  background: #fbfbf8;
+  padding: 10px;
+}
+
+.graph-node {
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.event-item {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.graph-node strong,
+.event-item strong,
+.document-item strong,
+.search-result strong,
+.link-list strong {
+  color: #17201d;
+}
+
+.graph-node span,
+.event-item span,
+.document-main span,
+.revision-list,
+.search-result small,
+.link-list span,
+.relationship-list {
+  color: #65716b;
+  font-size: 12px;
+}
+
+.relationship-list,
+.revision-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.relationship-list span,
+.revision-list span {
+  border: 1px solid #d8ddd7;
+  border-radius: 999px;
+  background: #ffffff;
+  padding: 3px 8px;
+}
+
+.upload-control {
+  position: relative;
+  display: inline-flex;
+  width: fit-content;
+  min-height: 36px;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid #c9d0ca;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #25302c;
+  padding: 0 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.upload-control input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.document-item {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+}
+
+.document-main {
+  display: grid;
+  gap: 3px;
+}
+
+.document-actions,
+.revision-list {
+  grid-column: 1 / -1;
+}
+
+.search-result {
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  color: inherit;
+  text-decoration: none;
+}
+
+.search-result span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
 @media (max-width: 900px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -729,7 +941,10 @@ select {
 
   .admin-form-grid,
   .field-editor-main,
-  .definition-list {
+  .definition-list,
+  .filter-grid,
+  .detail-grid,
+  .search-results-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -748,8 +963,16 @@ select {
   }
 
   .topbar-meta,
-  .header-actions {
+  .header-actions,
+  .search-form {
     flex-wrap: wrap;
+  }
+
+  .search-form,
+  .event-item,
+  .document-item,
+  .search-result {
+    grid-template-columns: 1fr;
   }
 
   .workspace-header h1 {

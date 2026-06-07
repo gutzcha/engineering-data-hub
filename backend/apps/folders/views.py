@@ -1,5 +1,5 @@
 from django.contrib.auth.models import Group
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
@@ -31,6 +31,13 @@ class FolderChangeEventViewSet(viewsets.ReadOnlyModelViewSet):
         review_status = self.request.query_params.get("review_status", "pending")
         if review_status:
             queryset = queryset.filter(review_status=review_status)
+        record_id = self.request.query_params.get("record") or self.request.query_params.get(
+            "matched_record"
+        )
+        if record_id:
+            queryset = queryset.filter(
+                Q(matched_record_id=record_id) | Q(managed_folder__record_id=record_id)
+            )
         return _filter_visible_events(self.request.user, queryset)
 
     @action(detail=True, methods=["post"])

@@ -25,7 +25,7 @@ class RecordViewSet(viewsets.ModelViewSet):
     http_method_names = ["get", "post", "patch", "head", "options"]
 
     def get_queryset(self):
-        return Record.objects.all()
+        return Record.objects.prefetch_related("documents__current_revision")
 
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())

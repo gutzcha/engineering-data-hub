@@ -12,11 +12,18 @@ import {
   SlidersHorizontal
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useParams } from "react-router-dom";
 
 import { DataTable } from "../components/DataTable";
 import { StatusBadge } from "../components/StatusBadge";
 import { ConfigWorkspace } from "../features/admin-config/ConfigWorkspace";
+import {
+  DocumentDetailPage,
+  DocumentLibraryPage
+} from "../features/documents/DocumentPanel";
+import { RecordDetail } from "../features/records/RecordDetail";
+import { RecordList } from "../features/records/RecordList";
+import { SearchPage } from "../features/search/SearchPage";
 
 export type NavigationItem = {
   label: string;
@@ -242,11 +249,75 @@ function PlaceholderPage({ item }: { item: NavigationItem }) {
   );
 }
 
+function SearchTargetPlaceholder({
+  description,
+  idParam,
+  label
+}: {
+  description: string;
+  idParam: string;
+  label: string;
+}) {
+  const params = useParams();
+  const id = params[idParam] ?? "selected";
+
+  return (
+    <div className="page-stack">
+      <section className="workspace-header" aria-labelledby={`${label}-detail-title`}>
+        <div>
+          <p className="section-kicker">{description}</p>
+          <h1 id={`${label}-detail-title`}>
+            {label} {id}
+          </h1>
+        </div>
+      </section>
+      <section className="empty-state">
+        <Search aria-hidden="true" size={28} />
+        <div>
+          <h2>{label} search target</h2>
+          <p>
+            This route preserves navigation from unified search while the full
+            workspace detail surface is completed.
+          </p>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<HomePage />} />
-      {navigationItems.slice(1).map((item) => (
+      <Route path="/records" element={<RecordList />} />
+      <Route path="/records/:recordId" element={<RecordDetail />} />
+      <Route path="/documents" element={<DocumentLibraryPage />} />
+      <Route path="/documents/:documentId" element={<DocumentDetailPage />} />
+      <Route
+        path="/projects/:projectId"
+        element={
+          <SearchTargetPlaceholder
+            description="Engineering project search target"
+            idParam="projectId"
+            label="Project"
+          />
+        }
+      />
+      <Route
+        path="/tasks/folder-events/:eventId"
+        element={
+          <SearchTargetPlaceholder
+            description="Folder review event search target"
+            idParam="eventId"
+            label="Folder Event"
+          />
+        }
+      />
+      <Route path="/search" element={<SearchPage />} />
+      {navigationItems
+        .slice(1)
+        .filter((item) => !["/records", "/documents", "/search"].includes(item.path))
+        .map((item) => (
         <Route
           key={item.path}
           path={item.path}

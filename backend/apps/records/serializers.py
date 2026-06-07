@@ -5,9 +5,12 @@ from apps.audit.services import record_audit_event
 from apps.records.codes import generate_record_code, validate_code_pattern
 from apps.records.models import Record, RecordObjectTypeLock
 from apps.records.validation import get_object_type_definition, validate_record_data
+from apps.documents.serializers import DocumentSerializer
 
 
 class RecordSerializer(serializers.ModelSerializer):
+    documents = DocumentSerializer(many=True, read_only=True)
+
     class Meta:
         model = Record
         fields = [
@@ -18,6 +21,7 @@ class RecordSerializer(serializers.ModelSerializer):
             "status",
             "schema_version",
             "data",
+            "documents",
             "created_by",
             "updated_by",
             "created_at",
@@ -27,6 +31,7 @@ class RecordSerializer(serializers.ModelSerializer):
             "id",
             "title",
             "schema_version",
+            "documents",
             "created_by",
             "updated_by",
             "created_at",

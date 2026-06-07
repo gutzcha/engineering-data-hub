@@ -4,6 +4,7 @@ from django.contrib.auth.models import Group
 
 from apps.accounts.models import ObjectPermission
 from apps.config_registry.services import create_draft_from_current, publish_draft
+from apps.documents.models import Document, DocumentRevision
 from apps.records.models import Record
 
 
@@ -152,6 +153,74 @@ def post_json(client, path, payload):
 
 def patch_json(client, path, payload):
     return client.patch(path, payload, content_type="application/json")
+
+
+@pytest.mark.django_db
+def test_record_detail_includes_owned_document_summaries(
+    client,
+    user_factory,
+    active_config,
+    permissions,
+):
+    record = Record.objects.create(
+        object_type_key="product",
+        code="PROD-900001",
+        title="Documented Product",
+        schema_version=active_config.version,
+        data={
+            "commercial_name": "Documented Product",
+            "markets": ["medical"],
+        },
+    )
+    document = Document.objects.create(
+        owner_record=record,
+        title="Release Specification",
+        document_type="specification",
+    )
+    revision = DocumentRevision.objects.create(
+        document=document,
+        revision_label="A",
+        file_name="release-spec.pdf",
+        storage_path="documents/1/revisions/1/release-spec.pdf",
+        sha256="abc123",
+        size=123,
+        mime_type="application/pdf",
+        extraction_status="complete",
+    )
+    document.current_revision = revision
+    document.save(update_fields=["current_revision", "updated_at"])
+    client.force_login(user_factory("document-summary-viewer", "Viewer"))
+
+    response = client.get(f"/api/records/{record.pk}/")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["documents"] == [
+        {
+            "id": document.pk,
+            "title": "Release Specification",
+            "owner_record": str(record.pk),
+            "document_type": "specification",
+            "current_revision": {
+                "id": revision.pk,
+                "revision_label": "A",
+                "file_name": "release-spec.pdf",
+                "sha256": "abc123",
+                "size": 123,
+                "mime_type": "application/pdf",
+                "extraction_status": "complete",
+                "state": "draft",
+                "created_by": None,
+                "released_at": None,
+                "created_at": body["documents"][0]["current_revision"]["created_at"],
+                "updated_at": body["documents"][0]["current_revision"]["updated_at"],
+            },
+            "state": "draft",
+            "folder": None,
+            "created_at": body["documents"][0]["created_at"],
+            "updated_at": body["documents"][0]["updated_at"],
+        }
+    ]
 
 
 @pytest.mark.django_db
