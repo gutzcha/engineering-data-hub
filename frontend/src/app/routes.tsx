@@ -21,9 +21,12 @@ import {
   DocumentDetailPage,
   DocumentLibraryPage
 } from "../features/documents/DocumentPanel";
+import { ProjectDetail } from "../features/projects/ProjectDetail";
+import { ProjectList } from "../features/projects/ProjectList";
 import { RecordDetail } from "../features/records/RecordDetail";
 import { RecordList } from "../features/records/RecordList";
 import { SearchPage } from "../features/search/SearchPage";
+import { TaskInbox } from "../features/workflows/TaskInbox";
 
 export type NavigationItem = {
   label: string;
@@ -291,18 +294,11 @@ export function AppRoutes() {
       <Route path="/" element={<HomePage />} />
       <Route path="/records" element={<RecordList />} />
       <Route path="/records/:recordId" element={<RecordDetail />} />
+      <Route path="/projects" element={<ProjectList />} />
+      <Route path="/projects/:projectId" element={<ProjectDetail />} />
       <Route path="/documents" element={<DocumentLibraryPage />} />
       <Route path="/documents/:documentId" element={<DocumentDetailPage />} />
-      <Route
-        path="/projects/:projectId"
-        element={
-          <SearchTargetPlaceholder
-            description="Engineering project search target"
-            idParam="projectId"
-            label="Project"
-          />
-        }
-      />
+      <Route path="/tasks" element={<TaskInbox />} />
       <Route
         path="/tasks/folder-events/:eventId"
         element={
@@ -316,7 +312,7 @@ export function AppRoutes() {
       <Route path="/search" element={<SearchPage />} />
       {navigationItems
         .slice(1)
-        .filter((item) => !["/records", "/documents", "/search"].includes(item.path))
+        .filter((item) => !["/records", "/projects", "/documents", "/search", "/tasks"].includes(item.path))
         .map((item) => (
         <Route
           key={item.path}

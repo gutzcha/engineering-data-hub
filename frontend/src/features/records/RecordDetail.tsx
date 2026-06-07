@@ -3,7 +3,6 @@ import {
   ClipboardCheck,
   History,
   Loader2,
-  Network,
   Rocket,
   Save
 } from "lucide-react";
@@ -17,6 +16,7 @@ import {
   buildDocumentUploadForm
 } from "../documents/DocumentPanel";
 import { FolderEvent, FolderInfo, FolderPanel } from "../folders/FolderPanel";
+import { WorkflowPanel as WorkflowStatusPanel } from "../workflows/WorkflowPanel";
 import { apiGet, apiPatch, apiPost, apiPostForm } from "../../lib/api";
 import {
   ConfigData,
@@ -181,15 +181,6 @@ export function RecordDetail() {
     }
   });
 
-  const transitionWorkflow = useMutation({
-    mutationFn: (transitionKey: string | number) =>
-      apiPost<WorkflowState>(`/records/${recordId}/workflow/${transitionKey}/`, {}),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["records", recordId, "workflow"] });
-      void queryClient.invalidateQueries({ queryKey: ["records", recordId] });
-    }
-  });
-
   const acceptFolderEvent = useMutation({
     mutationFn: (eventId: string | number) =>
       apiPost<FolderEvent>(`/folder-events/${eventId}/accept/`, {}),
@@ -332,10 +323,10 @@ export function RecordDetail() {
             releaseDocument.mutate({ documentId, revisionId })
           }
         />
-        <WorkflowPanel
+        <WorkflowStatusPanel
+          recordId={recordId}
           workflow={workflowQuery.data}
           isLoading={workflowQuery.isLoading}
-          onTransition={(transitionKey) => transitionWorkflow.mutate(transitionKey)}
         />
         <ProjectLinksPanel projects={record.project_links ?? record.projects ?? []} />
         <AuditPanel events={itemsFromResponse(auditQuery.data)} isLoading={auditQuery.isLoading} />
@@ -350,49 +341,6 @@ function SummaryMetric({ label, value }: { label: string; value: string }) {
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
-  );
-}
-
-function WorkflowPanel({
-  workflow,
-  isLoading,
-  onTransition
-}: {
-  workflow?: WorkflowState;
-  isLoading: boolean;
-  onTransition: (transitionKey: string | number) => void;
-}) {
-  const transitions = workflow?.available_transitions ?? workflow?.transitions ?? [];
-
-  return (
-    <section className="table-panel detail-panel" aria-labelledby="workflow-panel-title">
-      <div className="panel-heading">
-        <div>
-          <p className="section-kicker">Workflow</p>
-          <h2 id="workflow-panel-title">Workflow</h2>
-        </div>
-        <StatusBadge tone="review">{isLoading ? "Loading" : workflow?.state ?? workflow?.status ?? "Not started"}</StatusBadge>
-      </div>
-      <div className="record-panel-body">
-        <div className="record-action-row">
-          {transitions.length === 0 ? (
-            <p className="admin-muted">No workflow transitions are currently available.</p>
-          ) : (
-            transitions.map((transition) => (
-              <button
-                className="button button-secondary"
-                type="button"
-                key={transition.key ?? transition.id ?? transition.label}
-                onClick={() => onTransition(transition.key ?? transition.id ?? "")}
-              >
-                <Network aria-hidden="true" size={16} />
-                {transition.label ?? transition.name ?? transition.to_state ?? transition.to ?? "Transition"}
-              </button>
-            ))
-          )}
-        </div>
-      </div>
-    </section>
   );
 }
 
