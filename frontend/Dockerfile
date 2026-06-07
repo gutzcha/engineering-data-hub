@@ -6,7 +6,9 @@ COPY . .
 
 RUN if [ -f package-lock.json ]; then npm ci; elif [ -f package.json ]; then npm install; fi
 
+RUN npm run build
+
 EXPOSE 5173
 
 # Production-oriented default. compose.dev.yaml overrides this with Vite hot reload.
-CMD ["npm", "run", "start", "--", "--host", "0.0.0.0"]
+CMD ["npm", "run", "start"]
