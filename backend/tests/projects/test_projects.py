@@ -90,6 +90,7 @@ def test_create_project_creates_generic_project_record(
     assert project.record.code == "PRJ-000001"
     assert project.record.title == "Line Trial"
     assert project.record.data["project_name"] == "Line Trial"
+    assert project.record.data["project_type"] == "New Product"
     assert project.record.schema_version == active_project_config.version
     assert project.record.created_by == actor
     assert Record.objects.filter(pk=project.record_id, object_type_key="project").exists()

@@ -33,6 +33,7 @@ def create_project(
     if data:
         record_data.update(data)
     record_data["project_name"] = name
+    record_data.setdefault("project_type", "New Product")
 
     serializer = RecordSerializer(
         data={"object_type_key": "project", "data": record_data},
