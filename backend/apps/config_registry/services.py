@@ -539,10 +539,8 @@ def _append_unique(items, value):
         items.append(value)
 
 
-def _runtime_workflow_key(workflow_key, object_type_key, index, assignment_count):
-    if assignment_count == 1 or index == 0:
-        return workflow_key
-    return f"{workflow_key}_{object_type_key}"
+def _runtime_workflow_key(workflow_key, object_type_key, _index, _assignment_count):
+    return f"{workflow_key}__{object_type_key}"
 
 
 def _initial_workflow_state(workflow):

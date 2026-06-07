@@ -256,7 +256,7 @@ def test_publish_syncs_starter_workflows_and_dashboards_to_runtime_models(client
     publish_draft(draft, user)
 
     workflow = WorkflowDefinition.objects.get(
-        key="engineering_record_release",
+        key="engineering_record_release__product",
         object_type_key="product",
     )
     assert workflow.name == "Engineering Record Release"
@@ -303,7 +303,7 @@ def test_publish_syncs_starter_workflows_and_dashboards_to_runtime_models(client
     workflow.refresh_from_db()
     dashboard.refresh_from_db()
     assert workflow.name == "Engineering Record Release Updated"
-    assert WorkflowDefinition.objects.filter(key="engineering_record_release").count() == 1
+    assert WorkflowDefinition.objects.filter(key="engineering_record_release__product").count() == 1
     assert WorkflowTransition.objects.filter(definition=workflow).count() == 3
     assert Dashboard.objects.filter(config__key="engineering_overview").count() == 1
     assert DashboardWidget.objects.get(
@@ -382,7 +382,7 @@ def test_publish_retires_removed_config_managed_runtime_rows():
     )
     draft = create_draft_from_current(user)
     publish_draft(draft, user)
-    stale_workflow = WorkflowDefinition.objects.get(key="raw_material_approval")
+    stale_workflow = WorkflowDefinition.objects.get(key="raw_material_approval__raw_material")
     assert stale_workflow.is_active is True
     assert Dashboard.objects.filter(config__key="document_health").exists()
     unmanaged_workflow = WorkflowDefinition.objects.create(
@@ -421,3 +421,62 @@ def test_publish_retires_removed_config_managed_runtime_rows():
     ).exists()
     assert unmanaged_workflow.is_active is True
     assert Dashboard.objects.filter(pk=unmanaged_dashboard.pk).exists()
+
+
+@pytest.mark.django_db
+def test_multi_object_workflow_keys_remain_stable_when_first_assignment_is_removed():
+    User = get_user_model()
+    user = User.objects.create_superuser(
+        username="starter-multi-workflow-admin",
+        password="test-pass",
+    )
+    draft = create_draft_from_current(user)
+    publish_draft(draft, user)
+    product_definition = WorkflowDefinition.objects.get(
+        key="engineering_record_release__product",
+        object_type_key="product",
+    )
+    test_method_definition = WorkflowDefinition.objects.get(
+        key="engineering_record_release__test_method",
+        object_type_key="test_method",
+    )
+    document_definition = WorkflowDefinition.objects.get(
+        key="engineering_record_release__document",
+        object_type_key="document",
+    )
+    unmanaged_workflow = WorkflowDefinition.objects.create(
+        key="unmanaged_starter_release",
+        name="Unmanaged Starter Release",
+        object_type_key="product",
+        initial_state="draft",
+        data={},
+    )
+
+    second_draft = create_draft_from_current(user)
+    product_type = next(
+        object_type
+        for object_type in second_draft.data["object_types"]
+        if object_type["key"] == "product"
+    )
+    product_type.pop("default_workflow_key")
+    second_draft.save()
+    publish_draft(second_draft, user)
+
+    product_definition.refresh_from_db()
+    test_method_definition.refresh_from_db()
+    document_definition.refresh_from_db()
+    unmanaged_workflow.refresh_from_db()
+    assert product_definition.is_active is False
+    assert product_definition.object_type_key == "product"
+    assert test_method_definition.is_active is True
+    assert test_method_definition.object_type_key == "test_method"
+    assert document_definition.is_active is True
+    assert document_definition.object_type_key == "document"
+    assert WorkflowDefinition.objects.filter(
+        key="engineering_record_release__test_method",
+    ).count() == 1
+    assert WorkflowDefinition.objects.filter(
+        key="engineering_record_release",
+        data__config_registry_managed=True,
+    ).count() == 0
+    assert unmanaged_workflow.is_active is True
