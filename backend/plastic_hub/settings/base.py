@@ -68,6 +68,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "django_filters",
     "apps.accounts",
+    "apps.audit",
     "apps.config_registry",
     "apps.documents",
     "apps.folders",
@@ -87,6 +88,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "apps.audit.middleware.AuditRequestMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]

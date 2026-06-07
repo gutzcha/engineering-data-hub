@@ -4,6 +4,7 @@ from django.db import transaction
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from apps.accounts.permissions import user_can
+from apps.audit.services import record_audit_event, snapshot_model
 from apps.projects.models import (
     Project,
     ProjectBoardColumn,
@@ -39,7 +40,7 @@ def create_project(
     )
     serializer.is_valid(raise_exception=True)
     record = serializer.save()
-    return Project.objects.create(
+    project = Project.objects.create(
         record=record,
         name=name,
         description=description,
@@ -49,10 +50,25 @@ def create_project(
         created_by=actor,
         updated_by=actor,
     )
+    record_audit_event(
+        actor,
+        "project.created",
+        project,
+        before=None,
+        after=_project_snapshot(project),
+    )
+    return project
 
 
 @transaction.atomic
-def move_task(*, task: ProjectTask, column_id: int | None, sort_order: int, actor) -> ProjectTask:
+def move_task(
+    *,
+    task: ProjectTask,
+    column_id: int | None,
+    sort_order: int,
+    actor,
+    request=None,
+) -> ProjectTask:
     if sort_order < 0:
         raise ValidationError({"sort_order": ["Must be greater than or equal to 0."]})
 
@@ -66,6 +82,7 @@ def move_task(*, task: ProjectTask, column_id: int | None, sort_order: int, acto
 
     old_column_id = task.column_id
     old_sort_order = task.sort_order
+    before = _project_task_snapshot(task)
     column = None
     if column_id is not None:
         try:
@@ -89,11 +106,25 @@ def move_task(*, task: ProjectTask, column_id: int | None, sort_order: int, acto
             "to_sort_order": task.sort_order,
         },
     )
+    record_audit_event(
+        actor,
+        "project.task_moved",
+        task,
+        before=before,
+        after=_project_task_snapshot(task),
+        request=request,
+    )
     return task
 
 
 @transaction.atomic
-def add_task_dependency(*, task: ProjectTask, depends_on_id: int, actor) -> ProjectTaskDependency:
+def add_task_dependency(
+    *,
+    task: ProjectTask,
+    depends_on_id: int,
+    actor,
+    request=None,
+) -> ProjectTaskDependency:
     project = _lock_project_dependency_graph(task.project_id)
     task = ProjectTask.objects.select_for_update().select_related("project__record").get(
         pk=task.pk,
@@ -117,6 +148,15 @@ def add_task_dependency(*, task: ProjectTask, depends_on_id: int, actor) -> Proj
         depends_on=depends_on,
         defaults={"created_by": actor},
     )
+    if _created:
+        record_audit_event(
+            actor,
+            "project.dependency_created",
+            dependency,
+            before=None,
+            after=snapshot_model(dependency, ["id", "task_id", "depends_on_id", "created_by_id"]),
+            request=request,
+        )
     return dependency
 
 
@@ -154,3 +194,42 @@ def _would_create_cycle(*, task: ProjectTask, depends_on: ProjectTask) -> bool:
             )
         )
     return False
+
+
+def _project_snapshot(project):
+    return snapshot_model(
+        project,
+        [
+            "id",
+            "record_id",
+            "name",
+            "description",
+            "status",
+            "start_date",
+            "target_date",
+            "owner_id",
+            "created_by_id",
+            "updated_by_id",
+        ],
+    )
+
+
+def _project_task_snapshot(task):
+    return snapshot_model(
+        task,
+        [
+            "id",
+            "project_id",
+            "column_id",
+            "milestone_id",
+            "title",
+            "state",
+            "assignee_user_id",
+            "assignee_role",
+            "start_date",
+            "due_date",
+            "estimated_hours",
+            "sort_order",
+            "completed_at",
+        ],
+    )

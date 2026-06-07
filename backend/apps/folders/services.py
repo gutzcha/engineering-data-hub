@@ -4,6 +4,7 @@ from pathlib import Path, PurePosixPath
 from django.conf import settings
 from django.db import transaction
 
+from apps.audit.services import record_audit_event, snapshot_model
 from apps.folders.models import FolderChangeEvent, ManagedFolder
 from apps.folders.templates import TEMPLATE_CHILDREN, default_template_key, render_folder_template
 
@@ -17,7 +18,7 @@ class ManagedFolderCollisionError(Exception):
         super().__init__(f"Managed folder target already exists: {relative_path}")
 
 
-def generate_managed_folder(record, *, template_key=None, actor=None):
+def generate_managed_folder(record, *, template_key=None, actor=None, request=None):
     template_key = template_key or default_template_key(record.object_type_key)
     if not template_key:
         raise ValueError(f"No managed folder template for {record.object_type_key}.")
@@ -67,6 +68,14 @@ def generate_managed_folder(record, *, template_key=None, actor=None):
                     if existing_managed_folder
                     else EMPTY_TREE_HASH,
                 },
+            )
+            record_audit_event(
+                actor,
+                "folder.generated",
+                managed_folder,
+                before=None,
+                after=_managed_folder_snapshot(managed_folder),
+                request=request,
             )
 
             if collision_path:
@@ -138,3 +147,19 @@ def _record_collision_event(record, collision_path, *, actor=None, managed_folde
         event.managed_folder = managed_folder
         event.save(update_fields=["managed_folder", "updated_at"])
     return event
+
+
+def _managed_folder_snapshot(managed_folder):
+    return snapshot_model(
+        managed_folder,
+        [
+            "id",
+            "record_id",
+            "folder_role",
+            "absolute_path",
+            "relative_path",
+            "template_key",
+            "state",
+            "last_scan_hash",
+        ],
+    )

@@ -71,6 +71,7 @@ class ProjectTaskMoveView(APIView):
             column_id=column_id,
             sort_order=sort_order,
             actor=request.user,
+            request=request,
         )
         return Response(ProjectTaskSerializer(moved).data, status=status.HTTP_200_OK)
 
@@ -135,6 +136,7 @@ class ProjectTaskDependencyView(APIView):
             task=task,
             depends_on_id=_required_int(request.data["depends_on"], "depends_on"),
             actor=request.user,
+            request=request,
         )
         return Response(
             ProjectTaskDependencySerializer(dependency).data,

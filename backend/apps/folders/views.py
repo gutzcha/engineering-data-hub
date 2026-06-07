@@ -7,6 +7,7 @@ from rest_framework.response import Response
 
 from apps.accounts.permissions import SYSTEM_ADMIN_ROLE, user_can
 from apps.accounts.models import ObjectPermission
+from apps.audit.services import record_audit_event, snapshot_model
 from apps.folders.models import FolderChangeEvent
 from apps.folders.serializers import FolderChangeEventSerializer
 
@@ -53,9 +54,18 @@ class FolderChangeEventViewSet(viewsets.ReadOnlyModelViewSet):
         event = self.get_object()
         if not _can_review_event(request.user, event):
             raise PermissionDenied("You do not have permission to review this folder event.")
+        before = _folder_event_snapshot(event)
         event.review_status = review_status
         event.reviewer = request.user
         event.save(update_fields=["review_status", "reviewer", "updated_at"])
+        record_audit_event(
+            request.user,
+            f"folder_event.{review_status}",
+            event,
+            before=before,
+            after=_folder_event_snapshot(event),
+            request=request,
+        )
         return Response(self.get_serializer(event).data)
 
 
@@ -92,3 +102,19 @@ def _filter_visible_events(user, queryset):
 
 def _is_system_admin(user):
     return Group.objects.filter(user=user, name=SYSTEM_ADMIN_ROLE).exists()
+
+
+def _folder_event_snapshot(event):
+    return snapshot_model(
+        event,
+        [
+            "id",
+            "event_type",
+            "path",
+            "detected_hash",
+            "matched_record_id",
+            "managed_folder_id",
+            "review_status",
+            "reviewer_id",
+        ],
+    )

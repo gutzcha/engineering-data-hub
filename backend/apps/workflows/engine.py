@@ -2,6 +2,7 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 
 from apps.accounts.permissions import SYSTEM_ADMIN_ROLE, user_can
+from apps.audit.services import record_audit_event, snapshot_model
 from apps.documents.models import Document
 from apps.workflows.models import (
     WorkflowDefinition,
@@ -29,6 +30,7 @@ def perform_transition(
     transition_key: str,
     actor_id: int,
     comment: str = "",
+    request=None,
 ) -> WorkflowInstance:
     """Validate guards, update state, create tasks, emit audit, and return the updated instance."""
     actor = get_user_model().objects.get(pk=actor_id)
@@ -43,6 +45,7 @@ def perform_transition(
         raise WorkflowGuardError(errors)
 
     previous_state = instance.state
+    before = _workflow_instance_snapshot(instance)
     instance.state = transition.to_state
     instance.updated_by = actor
     instance.save(update_fields=["state", "updated_by", "updated_at"])
@@ -58,6 +61,14 @@ def perform_transition(
             "to_state": transition.to_state,
             "created_task_ids": [task.pk for task in tasks],
         },
+    )
+    record_audit_event(
+        actor,
+        "workflow.transition_performed",
+        instance,
+        before=before,
+        after=_workflow_instance_snapshot(instance),
+        request=request,
     )
     return instance
 
@@ -196,3 +207,18 @@ def _as_list(value):
     if isinstance(value, (list, tuple, set)):
         return list(value)
     return [value]
+
+
+def _workflow_instance_snapshot(instance):
+    return snapshot_model(
+        instance,
+        [
+            "id",
+            "definition_id",
+            "record_id",
+            "state",
+            "data",
+            "created_by_id",
+            "updated_by_id",
+        ],
+    )

@@ -1,6 +1,7 @@
 from django.db import IntegrityError, transaction
 from rest_framework import serializers
 
+from apps.audit.services import record_audit_event
 from apps.records.codes import generate_record_code, validate_code_pattern
 from apps.records.models import Record, RecordObjectTypeLock
 from apps.records.validation import get_object_type_definition, validate_record_data
@@ -94,9 +95,18 @@ class RecordSerializer(serializers.ModelSerializer):
         validated_data["created_by"] = request.user if request else None
         validated_data["updated_by"] = request.user if request else None
         try:
-            return super().create(validated_data)
+            record = super().create(validated_data)
         except IntegrityError as error:
             raise serializers.ValidationError({"code": ["Record code must be unique."]}) from error
+        record_audit_event(
+            request.user if request else None,
+            "record.created",
+            record,
+            before=None,
+            after=_record_snapshot(record),
+            request=request,
+        )
+        return record
 
     @transaction.atomic
     def update(self, instance, validated_data):
@@ -111,10 +121,20 @@ class RecordSerializer(serializers.ModelSerializer):
         validated_data["schema_version"] = active_config.version
         if request:
             validated_data["updated_by"] = request.user
+        before = _record_snapshot(instance)
         try:
-            return super().update(instance, validated_data)
+            record = super().update(instance, validated_data)
         except IntegrityError as error:
             raise serializers.ValidationError({"code": ["Record code must be unique."]}) from error
+        record_audit_event(
+            request.user if request else None,
+            "record.updated",
+            record,
+            before=before,
+            after=_record_snapshot(record),
+            request=request,
+        )
+        return record
 
 
 def _title_from_data(object_type, data, code):
@@ -123,6 +143,18 @@ def _title_from_data(object_type, data, code):
     if title is None or title == "":
         return code
     return str(title)
+
+
+def _record_snapshot(record):
+    return {
+        "id": str(record.pk),
+        "object_type_key": record.object_type_key,
+        "code": record.code,
+        "title": record.title,
+        "status": record.status,
+        "schema_version": record.schema_version,
+        "data": record.data.copy(),
+    }
 
 
 def _lock_records_for_dynamic_unique_fields(object_type_key):

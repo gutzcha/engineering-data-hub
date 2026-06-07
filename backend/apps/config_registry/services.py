@@ -3,6 +3,7 @@ import re
 
 from django.db import transaction
 
+from apps.audit.services import record_audit_event
 from apps.config_registry.models import (
     ConfigurationDraft,
     ConfigurationSequence,
@@ -323,7 +324,7 @@ def _validate_mapping(value, path, label, code_label, errors):
 
 
 @transaction.atomic
-def publish_draft(draft: ConfigurationDraft, user) -> ConfigurationVersion:
+def publish_draft(draft: ConfigurationDraft, user, request=None) -> ConfigurationVersion:
     if draft.pk:
         draft = ConfigurationDraft.objects.select_for_update().get(pk=draft.pk)
 
@@ -353,6 +354,18 @@ def publish_draft(draft: ConfigurationDraft, user) -> ConfigurationVersion:
     draft.published_version = configuration_version
     draft.updated_by = user
     draft.save(update_fields=["status", "published_version", "updated_by", "updated_at"])
+    record_audit_event(
+        user,
+        "configuration.published",
+        configuration_version,
+        before=None,
+        after={
+            "id": configuration_version.pk,
+            "version": configuration_version.version,
+            "data": copy.deepcopy(configuration_version.data),
+        },
+        request=request,
+    )
     return configuration_version
 
 

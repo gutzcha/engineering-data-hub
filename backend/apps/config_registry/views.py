@@ -51,7 +51,7 @@ def validate_config_draft(request, draft_id):
 def publish_config_draft(request, draft_id):
     draft = get_object_or_404(ConfigurationDraft, pk=draft_id)
     try:
-        configuration = publish_draft(draft, request.user)
+        configuration = publish_draft(draft, request.user, request=request)
     except ConfigurationValidationError as error:
         return Response({"errors": error.errors}, status=status.HTTP_400_BAD_REQUEST)
     return Response(ConfigurationVersionSerializer(configuration).data, status=status.HTTP_201_CREATED)

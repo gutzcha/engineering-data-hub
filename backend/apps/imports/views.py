@@ -11,6 +11,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.permissions import user_can
+from apps.audit.services import record_audit_event
 from apps.folders.models import FolderChangeEvent
 from apps.imports.models import ImportAuditEvent, ImportJob
 from apps.imports.services import (
@@ -50,6 +51,14 @@ class ImportJobListCreateView(APIView):
             created_by=request.user,
             updated_by=request.user,
         )
+        record_audit_event(
+            request.user,
+            "import.created",
+            job,
+            before=None,
+            after=_job_snapshot(job),
+            request=request,
+        )
         return Response(_serialize_job(job), status=status.HTTP_201_CREATED)
 
 
@@ -60,7 +69,30 @@ class ImportJobDryRunView(APIView):
         job = get_object_or_404(ImportJob, pk=pk)
         if not _can_import_or_edit(request.user, job.target_object_type):
             raise PermissionDenied("You do not have permission to import this object type.")
-        return Response(dry_run_import(job, actor=request.user), status=status.HTTP_200_OK)
+        before = _job_snapshot(job)
+        try:
+            result = dry_run_import(job, actor=request.user)
+        except Exception:
+            job.refresh_from_db()
+            record_audit_event(
+                request.user,
+                "import.dry_run",
+                job,
+                before=before,
+                after=_job_snapshot(job),
+                request=request,
+            )
+            raise
+        job.refresh_from_db()
+        record_audit_event(
+            request.user,
+            "import.dry_run",
+            job,
+            before=before,
+            after=_job_snapshot(job),
+            request=request,
+        )
+        return Response(result, status=status.HTTP_200_OK)
 
 
 class ImportJobApplyView(APIView):
@@ -69,7 +101,22 @@ class ImportJobApplyView(APIView):
     def post(self, request, pk):
         job = get_object_or_404(ImportJob, pk=pk)
         create_folders = bool(request.data.get("create_managed_folders", False))
-        result = apply_import(job, actor=request.user, create_managed_folders=create_folders)
+        before = _job_snapshot(job)
+        result = apply_import(
+            job,
+            actor=request.user,
+            create_managed_folders=create_folders,
+            request=request,
+        )
+        job.refresh_from_db()
+        record_audit_event(
+            request.user,
+            "import.applied",
+            job,
+            before=before,
+            after=_job_snapshot(job),
+            request=request,
+        )
         return Response(result, status=status.HTTP_200_OK)
 
 
@@ -100,6 +147,7 @@ class FolderLinkAcceptView(APIView):
             object_type_key=request.data.get("object_type_key"),
             links=request.data.get("links", []),
             actor=request.user,
+            request=request,
         )
         return Response(result, status=status.HTTP_200_OK)
 
@@ -169,6 +217,19 @@ class ProjectStatusExportView(APIView):
 
 
 def _serialize_job(job):
+    return {
+        "id": job.pk,
+        "target_object_type": job.target_object_type,
+        "mapping": job.mapping,
+        "dry_run_results": job.dry_run_results,
+        "created_records_count": job.created_records_count,
+        "updated_records_count": job.updated_records_count,
+        "error_rows": job.error_rows,
+        "state": job.state,
+    }
+
+
+def _job_snapshot(job):
     return {
         "id": job.pk,
         "target_object_type": job.target_object_type,

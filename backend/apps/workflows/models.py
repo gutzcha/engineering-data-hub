@@ -4,6 +4,8 @@ from django.conf import settings
 from django.db import models, transaction
 from django.utils import timezone
 
+from apps.audit.services import record_audit_event, snapshot_model
+
 
 class WorkflowTaskStateError(ValueError):
     pass
@@ -182,7 +184,7 @@ class WorkflowTask(models.Model):
     def __str__(self):
         return self.title
 
-    def mark_done(self, actor, comment: str = ""):
+    def mark_done(self, actor, comment: str = "", request=None):
         with transaction.atomic():
             task = (
                 WorkflowTask.objects.select_for_update()
@@ -195,6 +197,7 @@ class WorkflowTask(models.Model):
             if task.state == self.State.CANCELLED:
                 self._copy_completion_state(task)
                 raise WorkflowTaskStateError("Cancelled workflow tasks cannot be completed.")
+            before = _workflow_task_snapshot(task)
             task.state = self.State.DONE
             task.completed_by = actor
             task.completed_at = timezone.now()
@@ -206,6 +209,14 @@ class WorkflowTask(models.Model):
                 actor=actor,
                 comment=comment,
                 data={"task_id": task.pk, "task_key": task.key},
+            )
+            record_audit_event(
+                actor,
+                "workflow.task_completed",
+                task,
+                before=before,
+                after=_workflow_task_snapshot(task),
+                request=request,
             )
             self._copy_completion_state(task)
             return self
@@ -251,3 +262,23 @@ class WorkflowEvent(models.Model):
 
     def __str__(self):
         return f"{self.action}: {self.instance_id}"
+
+
+def _workflow_task_snapshot(task):
+    return snapshot_model(
+        task,
+        [
+            "id",
+            "key",
+            "instance_id",
+            "title",
+            "state",
+            "assignee_user_id",
+            "assignee_role",
+            "related_record_id",
+            "related_document_id",
+            "related_project",
+            "completed_by_id",
+            "completed_at",
+        ],
+    )

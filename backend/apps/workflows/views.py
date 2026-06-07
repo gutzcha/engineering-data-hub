@@ -77,7 +77,7 @@ class WorkflowTaskCompleteView(APIView):
             if not _can_complete_task(request.user, task):
                 raise PermissionDenied("You do not have permission to complete this task.")
             try:
-                task.mark_done(request.user, request.data.get("comment", ""))
+                task.mark_done(request.user, request.data.get("comment", ""), request=request)
             except WorkflowTaskStateError as error:
                 return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(WorkflowTaskSerializer(task).data, status=status.HTTP_200_OK)
@@ -115,6 +115,7 @@ class RecordWorkflowTransitionView(APIView):
                 transition_key,
                 request.user.pk,
                 request.data.get("comment", ""),
+                request=request,
             )
         except WorkflowGuardError as error:
             return Response({"detail": str(error), "errors": error.errors}, status=status.HTTP_400_BAD_REQUEST)

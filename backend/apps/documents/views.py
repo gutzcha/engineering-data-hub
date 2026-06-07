@@ -10,6 +10,8 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from apps.accounts.permissions import user_can
+from apps.audit.services import record_audit_event, snapshot_model
+from apps.audit.views import audit_response, document_audit_events
 from apps.documents.extraction import extract_text
 from apps.documents.models import Document, DocumentEvent, DocumentRevision
 from apps.documents.serializers import DocumentRevisionSerializer, DocumentSerializer
@@ -75,6 +77,14 @@ class DocumentViewSet(viewsets.ViewSet):
                 )
                 document.current_revision = revision
                 document.save(update_fields=["current_revision", "updated_at"])
+            record_audit_event(
+                request.user,
+                "document.created",
+                document,
+                before=None,
+                after=_document_snapshot(document),
+                request=request,
+            )
 
         return Response(DocumentSerializer(document).data, status=status.HTTP_201_CREATED)
 
@@ -94,6 +104,7 @@ class DocumentViewSet(viewsets.ViewSet):
 
         with transaction.atomic():
             document = self._lock_document(document.pk)
+            before = _document_snapshot(document)
             revision = _create_or_replace_revision(
                 document=document,
                 revision_label=revision_label,
@@ -103,6 +114,14 @@ class DocumentViewSet(viewsets.ViewSet):
             if document.state == Document.State.DRAFT:
                 document.current_revision = revision
                 document.save(update_fields=["current_revision", "updated_at"])
+            record_audit_event(
+                request.user,
+                "document.revision_saved",
+                document,
+                before=before,
+                after=_document_snapshot(document),
+                request=request,
+            )
 
         return Response(DocumentRevisionSerializer(revision).data, status=status.HTTP_201_CREATED)
 
@@ -113,6 +132,7 @@ class DocumentViewSet(viewsets.ViewSet):
 
         with transaction.atomic():
             document = self._lock_document(document.pk)
+            before = _document_snapshot(document)
             revision = get_object_or_404(
                 DocumentRevision.objects.select_for_update(),
                 pk=revision_id,
@@ -126,6 +146,14 @@ class DocumentViewSet(viewsets.ViewSet):
             document.current_revision = revision
             document.state = Document.State.RELEASED
             document.save(update_fields=["current_revision", "state", "updated_at"])
+            record_audit_event(
+                request.user,
+                "document.revision_released",
+                document,
+                before=before,
+                after=_document_snapshot(document),
+                request=request,
+            )
 
         return Response(DocumentRevisionSerializer(revision).data, status=status.HTTP_200_OK)
 
@@ -168,6 +196,12 @@ class DocumentViewSet(viewsets.ViewSet):
             },
             status=status.HTTP_200_OK,
         )
+
+    @action(detail=True, methods=["get"])
+    def audit(self, request, pk=None):
+        document = self._get_document(pk)
+        self._require_record_permission(request.user, "view", document.owner_record)
+        return audit_response(document_audit_events(document))
 
     def _get_document(self, pk):
         return get_object_or_404(
@@ -293,6 +327,21 @@ def _record_event(document, revision, action: str, actor, data=None):
         action=action,
         actor=actor,
         data=data or {},
+    )
+
+
+def _document_snapshot(document):
+    return snapshot_model(
+        document,
+        [
+            "id",
+            "title",
+            "owner_record_id",
+            "document_type",
+            "current_revision_id",
+            "state",
+            "folder_id",
+        ],
     )
 
 

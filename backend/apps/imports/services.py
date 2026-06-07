@@ -7,6 +7,7 @@ from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from apps.accounts.permissions import user_can
+from apps.audit.services import record_audit_event, snapshot_model
 from apps.folders.models import FolderChangeEvent, ManagedFolder
 from apps.folders.services import generate_managed_folder, managed_root, validate_relative_path
 from apps.imports.mapping import mapped_rows
@@ -101,7 +102,7 @@ def dry_run_import(job, *, actor=None):
 
 
 @transaction.atomic
-def apply_import(job, *, actor, create_managed_folders=False):
+def apply_import(job, *, actor, create_managed_folders=False, request=None):
     job = ImportJob.objects.select_for_update().get(pk=job.pk)
     if job.state != ImportJob.State.DRY_RUN_READY:
         raise ValueError("Dry-run must pass before apply.")
@@ -112,8 +113,8 @@ def apply_import(job, *, actor, create_managed_folders=False):
 
     created = 0
     updated = 0
-    request = SimpleNamespace(user=actor)
-    operations = _preflight_apply_operations(job, result, request)
+    serializer_request = request or SimpleNamespace(user=actor)
+    operations = _preflight_apply_operations(job, result, serializer_request)
 
     for operation in operations:
         serializer = operation["serializer"]
@@ -134,6 +135,7 @@ def apply_import(job, *, actor, create_managed_folders=False):
                     lambda record_id=record.pk: generate_managed_folder(
                         Record.objects.get(pk=record_id),
                         actor=actor,
+                        request=request,
                     )
                 )
         else:
@@ -205,7 +207,7 @@ def scan_legacy_folders(*, legacy_root_path, object_type_key, matching_rule):
 
 
 @transaction.atomic
-def accept_folder_links(*, legacy_root_path, object_type_key, links, actor):
+def accept_folder_links(*, legacy_root_path, object_type_key, links, actor, request=None):
     legacy_root = Path(legacy_root_path).expanduser().resolve(strict=True)
     root = managed_root()
     if legacy_root != root and root not in legacy_root.parents:
@@ -240,6 +242,25 @@ def accept_folder_links(*, legacy_root_path, object_type_key, links, actor):
             managed_folder=managed_folder,
             review_status=FolderChangeEvent.ReviewStatus.LINKED,
             reviewer=actor if actor and actor.is_authenticated else None,
+        )
+        record_audit_event(
+            actor,
+            "folder.linked",
+            managed_folder,
+            before=None,
+            after=snapshot_model(
+                managed_folder,
+                [
+                    "id",
+                    "record_id",
+                    "folder_role",
+                    "absolute_path",
+                    "relative_path",
+                    "template_key",
+                    "state",
+                ],
+            ),
+            request=request,
         )
         accepted.append(
             {

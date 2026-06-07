@@ -4,9 +4,11 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from apps.accounts.permissions import user_can
+from apps.audit.services import record_audit_event
+from apps.audit.views import audit_response, record_audit_events
 from apps.folders.services import ManagedFolderCollisionError, generate_managed_folder
 from apps.records.models import Record
-from apps.records.serializers import RecordSerializer
+from apps.records.serializers import RecordSerializer, _record_snapshot
 from apps.records.validation import get_object_type_definition, validate_record_data
 from apps.relationships.services import build_record_graph
 
@@ -69,10 +71,19 @@ class RecordViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("You do not have permission to release this record.")
         _object_type, active_config = get_object_type_definition(record.object_type_key)
         validate_record_data(record.object_type_key, record.data, current_record=record)
+        before = _record_snapshot(record)
         record.status = Record.Status.RELEASED
         record.schema_version = active_config.version
         record.updated_by = request.user
         record.save(update_fields=["status", "schema_version", "updated_by", "updated_at"])
+        record_audit_event(
+            request.user,
+            "record.released",
+            record,
+            before=before,
+            after=_record_snapshot(record),
+            request=request,
+        )
         return Response(self.get_serializer(record).data, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["get"])
@@ -80,13 +91,18 @@ class RecordViewSet(viewsets.ModelViewSet):
         record = self.get_object()
         return Response(build_record_graph(record, user=request.user), status=status.HTTP_200_OK)
 
+    @action(detail=True, methods=["get"])
+    def audit(self, request, pk=None):
+        record = self.get_object()
+        return audit_response(record_audit_events(record))
+
     @action(detail=True, methods=["post"], url_path="folders/generate")
     def generate_folder(self, request, pk=None):
         record = self.get_object()
         if not user_can(request.user, "admin", record.object_type_key, record_id=str(record.pk)):
             raise PermissionDenied("You do not have permission to generate folders for this record.")
         try:
-            managed_folder = generate_managed_folder(record, actor=request.user)
+            managed_folder = generate_managed_folder(record, actor=request.user, request=request)
         except ValueError as error:
             return Response({"detail": str(error)}, status=status.HTTP_400_BAD_REQUEST)
         except ManagedFolderCollisionError as error:
