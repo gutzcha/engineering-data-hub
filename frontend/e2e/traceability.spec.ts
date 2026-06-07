@@ -4,16 +4,15 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { APIRequestContext, APIResponse, BrowserContext, Page } from "@playwright/test";
 
-const USERNAME = "pilot_admin";
-const PASSWORD = "pilot_admin_dev_password";
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "https://plastic-hub.local";
 const MEILI_URL = process.env.PLAYWRIGHT_MEILI_URL ?? "http://localhost:7700";
 const MEILI_MASTER_KEY = process.env.MEILI_MASTER_KEY ?? "change-me";
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
 // The current frontend has no login screen and the backend does not mount Django admin URLs.
-// This e2e seeds the requested pilot user through backend setup, then authenticates API traffic
-// with DRF Basic auth instead of pretending a browser login workflow exists.
+// This e2e authenticates API traffic with DRF Basic auth instead of pretending a browser
+// login workflow exists. Dev-only user seeding is refused unless ALLOW_E2E_USER_SEEDING=true
+// and PLAYWRIGHT_BASE_URL points at a known local development host.
 test.use({
   baseURL: BASE_URL,
   ignoreHTTPSErrors: true
@@ -33,14 +32,17 @@ test("traceability flow releases a controlled product spec and surfaces it in UI
     `Meilisearch is unavailable at ${MEILI_URL}; set PLAYWRIGHT_MEILI_URL when it is not on localhost.`
   );
 
-  const seed = seedPilotAdmin();
-  test.skip(!seed.ok, seed.message ?? "Unable to seed pilot_admin through backend setup.");
+  const userSetup = ensureE2EUser();
+  if (!userSetup.ok) {
+    throw new Error(userSetup.message);
+  }
+  const credentials = userSetup.credentials;
 
-  const auth = basicAuthHeader();
+  const auth = basicAuthHeader(credentials);
   await authorizeBrowserApiRequests(context, auth);
 
   const me = await getJson<{ username: string }>(request, "/api/accounts/me/", auth);
-  expect(me.username).toBe(USERNAME);
+  expect(me.username).toBe(credentials.username);
 
   const stamp = new Date().toISOString().replace(/[-:.TZ]/g, "");
   const productName = `PW Traceable Film ${stamp}`;
@@ -269,11 +271,66 @@ async function expectJson<T>(response: APIResponse, expectedStatus: number) {
   return JSON.parse(body) as T;
 }
 
-function seedPilotAdmin() {
-  if (process.env.PLAYWRIGHT_SKIP_BACKEND_SEED === "1") {
-    return { ok: true };
+type E2ECredentials = {
+  username: string;
+  password: string;
+};
+
+type E2EUserSetup =
+  | { ok: true; credentials: E2ECredentials }
+  | { ok: false; message: string; credentials?: never };
+
+function ensureE2EUser(): E2EUserSetup {
+  const explicitCredentials = credentialsFromEnvironment();
+  if (!explicitCredentials) {
+    return {
+      ok: false,
+      message:
+        "Set E2E_USERNAME and E2E_PASSWORD for a pre-provisioned test account. " +
+        "Dev-only seeding still requires both values and is available only with " +
+        "ALLOW_E2E_USER_SEEDING=true against localhost, 127.0.0.1, ::1, or plastic-hub.local."
+    };
   }
 
+  if (allowDevUserSeeding()) {
+    const seed = seedDevE2EUser(explicitCredentials);
+    if (!seed.ok) {
+      return { ok: false, message: seed.message };
+    }
+  }
+
+  return { ok: true, credentials: explicitCredentials };
+}
+
+function credentialsFromEnvironment(): E2ECredentials | undefined {
+  const username = process.env.E2E_USERNAME;
+  const password = process.env.E2E_PASSWORD;
+
+  if (username && password) {
+    return { username, password };
+  }
+
+  if (username || password) {
+    throw new Error("Both E2E_USERNAME and E2E_PASSWORD must be set together.");
+  }
+
+  return undefined;
+}
+
+function allowDevUserSeeding() {
+  return process.env.ALLOW_E2E_USER_SEEDING === "true" && isLocalDevTarget(BASE_URL);
+}
+
+function isLocalDevTarget(baseUrl: string) {
+  try {
+    const hostname = new URL(baseUrl).hostname.toLowerCase();
+    return ["localhost", "127.0.0.1", "::1", "[::1]", "plastic-hub.local"].includes(hostname);
+  } catch {
+    return false;
+  }
+}
+
+function seedDevE2EUser(credentials: E2ECredentials) {
   const script = `
 import json
 from django.contrib.auth import get_user_model
@@ -282,8 +339,8 @@ from apps.config_registry.models import ConfigurationVersion
 from apps.config_registry.services import create_draft_from_current, publish_draft
 from apps.workflows.models import WorkflowDefinition
 
-username = "${USERNAME}"
-password = "${PASSWORD}"
+username = ${JSON.stringify(credentials.username)}
+password = ${JSON.stringify(credentials.password)}
 User = get_user_model()
 user, _ = User.objects.get_or_create(username=username)
 user.is_active = True
@@ -330,14 +387,15 @@ print(json.dumps({"username": username}))
     return {
       ok: false,
       message:
-        `Backend setup failed. Run the test from the repo root with the compose stack up, ` +
-        `or pre-seed ${USERNAME} and set PLAYWRIGHT_SKIP_BACKEND_SEED=1. ${message}`
+        "Dev-only backend setup failed. Run with the compose stack up, or use " +
+        "E2E_USERNAME and E2E_PASSWORD for a pre-provisioned account. " +
+        message
     };
   }
 }
 
-function basicAuthHeader() {
-  return `Basic ${Buffer.from(`${USERNAME}:${PASSWORD}`).toString("base64")}`;
+function basicAuthHeader(credentials: E2ECredentials) {
+  return `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString("base64")}`;
 }
 
 function pdfWithText(text: string) {

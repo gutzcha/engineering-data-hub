@@ -53,13 +53,20 @@ Run the focused backend traceability acceptance flow:
 docker compose -f compose.yaml -f compose.dev.yaml run --rm --no-deps -e DJANGO_SETTINGS_MODULE=plastic_hub.settings.test backend pytest tests/e2e/test_traceability_flow.py
 ```
 
-Run the Playwright traceability flow against the Caddy/proxy origin after the local stack is up:
+Run the Playwright traceability flow from the frontend package after the local stack is up. Playwright is installed under `frontend`, not at the repo root:
 
 ```bash
-npx playwright test frontend/e2e/traceability.spec.ts
+cd frontend
+E2E_USERNAME=<test-user> E2E_PASSWORD=<test-password> npx playwright test e2e/traceability.spec.ts
 ```
 
-The Playwright test defaults to `https://plastic-hub.local` and can be pointed elsewhere with `PLAYWRIGHT_BASE_URL`. If Meilisearch is not exposed on `http://localhost:7700`, set `PLAYWRIGHT_MEILI_URL`.
+The Playwright test defaults to `https://plastic-hub.local` and can be pointed elsewhere with `PLAYWRIGHT_BASE_URL`. If Meilisearch is not exposed on `http://localhost:7700`, set `PLAYWRIGHT_MEILI_URL`. The account must be pre-provisioned with System Admin or equivalent permissions unless you are running against a local development host and explicitly opt into creating/updating the provided test account with `ALLOW_E2E_USER_SEEDING=true`.
+
+Host-run browser prerequisites:
+
+- Frontend dependencies installed with `npm install` or `npm ci`.
+- Playwright browser binaries installed with `npx playwright install`.
+- Caddy/proxy, backend, frontend, and Meilisearch running and reachable from the host.
 
 ## Release Package
 

@@ -27,8 +27,16 @@ docker compose -f compose.yaml up -d --build
 
 ## Migrations
 
+Development:
+
 ```sh
 docker compose -f compose.yaml -f compose.dev.yaml run --rm backend python manage.py migrate
+```
+
+Production:
+
+```sh
+docker compose -f compose.yaml run --rm backend python manage.py migrate
 ```
 
 - [ ] Migrations complete without unapplied migration warnings.
@@ -79,20 +87,24 @@ docker compose -f compose.yaml -f compose.dev.yaml run --rm frontend npm run lin
 docker compose -f compose.yaml -f compose.dev.yaml run --rm frontend npm test -- --run
 ```
 
-Playwright traceability flow against the Caddy/proxy origin:
-
-```sh
-npx playwright test frontend/e2e/traceability.spec.ts
-```
-
-Working equivalent from the frontend package directory:
+Playwright traceability flow against the Caddy/proxy origin. Run from the frontend package because Playwright is not installed at the repo root:
 
 ```sh
 cd frontend
-npx playwright test e2e/traceability.spec.ts
+E2E_USERNAME=<test-user> E2E_PASSWORD=<test-password> npx playwright test e2e/traceability.spec.ts
+```
+
+Local development may create or update the provided test account only when explicitly opted in and the target host is local:
+
+```sh
+cd frontend
+ALLOW_E2E_USER_SEEDING=true E2E_USERNAME=<test-user> E2E_PASSWORD=<test-password> npx playwright test e2e/traceability.spec.ts
 ```
 
 - [ ] Backend e2e creates product, raw material, product spec, controlled PDF, workflow release, search results, and audit evidence.
+- [ ] Frontend dependencies are installed and Playwright browser binaries are installed with `npx playwright install`.
+- [ ] A pre-provisioned E2E account with System Admin or equivalent permissions is provided through `E2E_USERNAME` and `E2E_PASSWORD` for pilot or production targets.
+- [ ] `ALLOW_E2E_USER_SEEDING=true` is used only with explicit test credentials against localhost, `127.0.0.1`, `::1`, or `plastic-hub.local`.
 - [ ] Playwright uses `PLAYWRIGHT_BASE_URL` or defaults to `https://plastic-hub.local`.
 - [ ] Playwright can reach Meilisearch through `PLAYWRIGHT_MEILI_URL` or defaults to `http://localhost:7700`.
 - [ ] Traceability flow passes end to end.
