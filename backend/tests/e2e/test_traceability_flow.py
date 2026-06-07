@@ -256,9 +256,11 @@ def test_traceability_flow_releases_searches_and_audits_product_spec(
         "relationship.created",
         "document.created",
         "workflow.transition_performed",
+        "workflow.task_completed",
         "document.revision_released",
     }.issubset(actions)
     assert actions.count("workflow.transition_performed") >= 3
+    assert actions.count("workflow.task_completed") >= 2
 
     product_spec_instance = WorkflowInstance.objects.get(record_id=product_spec["id"])
     assert product_spec_instance.state == "released"
