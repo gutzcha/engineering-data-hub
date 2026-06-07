@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from apps.audit.models import AuditEvent
+from apps.backups.services import BackupError, create_backup
 from apps.config_registry.models import ConfigurationVersion
 
 
@@ -117,6 +118,62 @@ def test_backup_manifest_records_paths_and_sha256_payloads(tmp_path, settings, m
     serialized_fingerprint = json.dumps(env_fingerprint)
     assert "do-not-export-this" not in serialized_fingerprint
     assert "also-secret" not in serialized_fingerprint
+
+
+@pytest.mark.parametrize("backup_id", [".", "..", "-starts-with-dash", "_starts_with_underscore"])
+def test_backup_rejects_unsafe_backup_ids(tmp_path, settings, backup_id):
+    backup_root = tmp_path / "backups"
+    settings.BACKUP_ROOT = str(backup_root)
+
+    with pytest.raises(BackupError):
+        create_backup(
+            backup_id=backup_id,
+            backup_root=backup_root,
+            managed_root=tmp_path / "managed",
+            media_root=tmp_path / "media",
+            database_dump_runner=lambda destination: destination.write_text(
+                "postgres dump\n",
+                encoding="utf-8",
+            ),
+        )
+
+    assert not backup_root.exists()
+
+
+def test_backup_redacts_secret_url_query_values(tmp_path, settings, monkeypatch):
+    managed_root = tmp_path / "managed"
+    media_root = tmp_path / "media"
+    backup_root = tmp_path / "backups"
+    env_file = tmp_path / ".env"
+    managed_root.mkdir()
+    media_root.mkdir()
+    env_file.write_text(
+        "SERVICE_URL=https://host/path?token=secret&mode=safe&api_key=hidden\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("SERVICE_URL", "https://host/path?token=secret&mode=safe&api_key=hidden")
+    settings.BACKUP_ROOT = str(backup_root)
+    settings.MANAGED_FILE_ROOT = str(managed_root)
+    settings.MEDIA_ROOT = str(media_root)
+
+    manifest = create_backup(
+        backup_id="backup-safe-url",
+        backup_root=backup_root,
+        managed_root=managed_root,
+        media_root=media_root,
+        env_file=env_file,
+        database_dump_runner=lambda destination: destination.write_text(
+            "postgres dump\n",
+            encoding="utf-8",
+        ),
+    )
+
+    env_fingerprint_path = Path(manifest.sha256_manifest["files"]["env_fingerprint"]["path"])
+    env_fingerprint = json.loads(env_fingerprint_path.read_text(encoding="utf-8"))
+    service_url = env_fingerprint["SERVICE_URL"]["value"]
+    assert service_url == "https://host/path?api_key=***&mode=safe&token=***"
+    assert "secret" not in json.dumps(env_fingerprint["SERVICE_URL"])
+    assert "hidden" not in json.dumps(env_fingerprint["SERVICE_URL"])
 
 
 def _sha256(path: Path):

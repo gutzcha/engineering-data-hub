@@ -19,7 +19,7 @@ Development can use:
 docker compose -f compose.yaml -f compose.dev.yaml up --build
 ```
 
-The development override keeps Caddy on `tls internal`; production should use IT-provided certificate files.
+The checked-in `.env.example` keeps Caddy on `tls internal` so a fresh Compose stack can start before production certificate files exist. Production should override this in `.env` with IT-provided certificate files.
 
 ## `.env` Setup
 

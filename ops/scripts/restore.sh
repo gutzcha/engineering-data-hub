@@ -10,8 +10,8 @@ if [ -z "$BACKUP_ID" ] || [ "${2:-}" ]; then
 fi
 
 case "$BACKUP_ID" in
-  *[!A-Za-z0-9_.:-]*)
-    echo "Backup id may contain only letters, numbers, dots, colons, dashes, and underscores." >&2
+  [!A-Za-z0-9]*|*[!A-Za-z0-9_.:-]*)
+    echo "Backup id must start with a letter or number and may contain only letters, numbers, dots, colons, dashes, and underscores." >&2
     exit 2
     ;;
 esac

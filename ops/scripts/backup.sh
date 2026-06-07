@@ -10,8 +10,10 @@ if [ "${2:-}" ]; then
 fi
 
 case "$BACKUP_ID" in
-  *[!A-Za-z0-9_.:-]*)
-    echo "Backup id may contain only letters, numbers, dots, colons, dashes, and underscores." >&2
+  "")
+    ;;
+  [!A-Za-z0-9]*|*[!A-Za-z0-9_.:-]*)
+    echo "Backup id must start with a letter or number and may contain only letters, numbers, dots, colons, dashes, and underscores." >&2
     exit 2
     ;;
 esac
@@ -20,7 +22,7 @@ if [ -n "$BACKUP_ID" ]; then
   export BACKUP_ID
 fi
 
-docker compose $COMPOSE_FILE_ARGS exec -T backend python manage.py shell -c '
+docker compose $COMPOSE_FILE_ARGS exec -T -e BACKUP_ID="$BACKUP_ID" backend python manage.py shell -c '
 import os
 from apps.backups.services import create_backup
 

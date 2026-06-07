@@ -20,7 +20,7 @@ from apps.config_registry.models import ConfigurationVersion
 
 
 SECRET_KEY_PARTS = ("PASSWORD", "SECRET", "TOKEN", "KEY", "CREDENTIAL")
-BACKUP_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
+BACKUP_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
 DEFAULT_ENV_KEYS = (
     "APP_ENV",
     "APP_HOST",
@@ -158,7 +158,10 @@ def _generate_backup_id():
 def _validate_backup_id(backup_id: str):
     backup_id = str(backup_id).strip()
     if not backup_id or not BACKUP_ID_RE.fullmatch(backup_id):
-        raise BackupError("Backup id may contain only letters, numbers, dots, colons, dashes, and underscores.")
+        raise BackupError(
+            "Backup id must start with a letter or number and may contain only "
+            "letters, numbers, dots, colons, dashes, and underscores."
+        )
     return backup_id
 
 
@@ -252,7 +255,16 @@ def _sanitize_plain_value(key: str, value: str):
         netloc = parsed.username + (":***" if parsed.password else "") + "@" + netloc
     if parsed.port:
         netloc = f"{netloc}:{parsed.port}"
-    query = urlencode(sorted(parse_qsl(parsed.query, keep_blank_values=True)))
+    query = urlencode(
+        sorted(
+            (
+                parameter,
+                "***" if _is_secret_key(parameter) else parameter_value,
+            )
+            for parameter, parameter_value in parse_qsl(parsed.query, keep_blank_values=True)
+        ),
+        safe="*",
+    )
     return urlunparse((parsed.scheme, netloc, parsed.path, parsed.params, query, parsed.fragment))
 
 
@@ -292,6 +304,8 @@ def _write_json(destination: Path, payload):
 
 def _ensure_child_path(path: Path, parent: Path):
     try:
-        path.relative_to(parent)
+        relative_path = path.relative_to(parent)
     except ValueError as exc:
         raise BackupError(f"Backup path {path} is outside backup root {parent}.") from exc
+    if relative_path == Path("."):
+        raise BackupError(f"Backup path {path} must be a strict child of backup root {parent}.")
