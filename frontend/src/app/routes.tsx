@@ -19,6 +19,7 @@ import { Link, Navigate, Route, Routes, useParams } from "react-router-dom";
 import { DataTable } from "../components/DataTable";
 import { StatusBadge } from "../components/StatusBadge";
 import { ConfigWorkspace } from "../features/admin-config/ConfigWorkspace";
+import { LoginPage } from "../features/auth/LoginPage";
 import { AuditTimeline } from "../features/audit/AuditTimeline";
 import { DashboardPage } from "../features/dashboards/DashboardPage";
 import {
@@ -329,6 +330,7 @@ export function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<HomePage />} />
+      <Route path="/login" element={<LoginPage />} />
       <Route path="/records" element={<RecordList />} />
       <Route path="/records/:recordId" element={<RecordDetail />} />
       <Route path="/projects" element={<ProjectList />} />

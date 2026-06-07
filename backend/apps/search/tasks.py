@@ -1,4 +1,5 @@
 from celery import shared_task
+from django.db import transaction
 
 from apps.search.client import get_search_client
 from apps.search.indexers import (
@@ -40,6 +41,46 @@ def index_document_revision(revision_id):
     if not client.enabled:
         return None
     return client.add_documents(DOCUMENTS_INDEX, [build_document_revision_payload(revision)])
+
+
+@shared_task
+def index_folder_event(event_id):
+    from apps.folders.models import FolderChangeEvent
+
+    try:
+        event = FolderChangeEvent.objects.select_related("matched_record").get(pk=event_id)
+    except FolderChangeEvent.DoesNotExist:
+        return None
+    client = get_search_client()
+    if not client.enabled:
+        return None
+    return client.add_documents(FOLDER_EVENTS_INDEX, [build_folder_event_payload(event)])
+
+
+def enqueue_record_index(record_id):
+    transaction.on_commit(lambda: index_record.delay(str(record_id)))
+
+
+def enqueue_record_indexes(record_ids):
+    ids = [str(record_id) for record_id in record_ids]
+    if not ids:
+        return
+    transaction.on_commit(lambda: [index_record.delay(record_id) for record_id in ids])
+
+
+def enqueue_document_revision_index(revision_id):
+    transaction.on_commit(lambda: index_document_revision.delay(revision_id))
+
+
+def enqueue_folder_event_index(event_id):
+    transaction.on_commit(lambda: index_folder_event.delay(event_id))
+
+
+def enqueue_folder_event_indexes(event_ids):
+    ids = list(event_ids)
+    if not ids:
+        return
+    transaction.on_commit(lambda: [index_folder_event.delay(event_id) for event_id in ids])
 
 
 @shared_task
@@ -88,4 +129,3 @@ def _batched(items, batch_size):
             batch = []
     if batch:
         yield batch
-

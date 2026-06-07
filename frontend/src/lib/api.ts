@@ -7,6 +7,7 @@ type ApiErrorPayload = {
 };
 
 const API_PREFIX = "/api";
+const UNSAFE_METHODS = new Set<HttpMethod>(["POST", "PATCH", "DELETE"]);
 
 export async function apiGet<T>(path: string): Promise<T> {
   return request<T>("GET", path);
@@ -32,7 +33,8 @@ async function request<T>(method: HttpMethod, path: string, body?: unknown): Pro
   const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
   const response = await fetch(apiUrl(path), {
     method,
-    headers: body === undefined || isFormData ? undefined : { "Content-Type": "application/json" },
+    credentials: "include",
+    headers: requestHeaders(method, body, isFormData),
     body:
       body === undefined
         ? undefined
@@ -50,6 +52,34 @@ async function request<T>(method: HttpMethod, path: string, body?: unknown): Pro
   }
 
   return response.json() as Promise<T>;
+}
+
+function requestHeaders(method: HttpMethod, body: unknown, isFormData: boolean) {
+  const headers: Record<string, string> = {};
+
+  if (body !== undefined && !isFormData) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  const csrfToken = UNSAFE_METHODS.has(method) ? csrfTokenFromCookie() : "";
+  if (csrfToken) {
+    headers["X-CSRFToken"] = csrfToken;
+  }
+
+  return Object.keys(headers).length ? headers : undefined;
+}
+
+function csrfTokenFromCookie() {
+  if (typeof document === "undefined") {
+    return "";
+  }
+
+  const token = document.cookie
+    .split(";")
+    .map((cookie) => cookie.trim())
+    .find((cookie) => cookie.startsWith("csrftoken="));
+
+  return token ? decodeURIComponent(token.slice("csrftoken=".length)) : "";
 }
 
 function apiUrl(path: string) {

@@ -5,14 +5,8 @@ import { fileURLToPath } from "node:url";
 import type { APIRequestContext, APIResponse, BrowserContext, Page } from "@playwright/test";
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "https://plastic-hub.local";
-const MEILI_URL = process.env.PLAYWRIGHT_MEILI_URL ?? "http://localhost:7700";
-const MEILI_MASTER_KEY = process.env.MEILI_MASTER_KEY ?? "change-me";
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
-// The current frontend has no login screen and the backend does not mount Django admin URLs.
-// This e2e authenticates API traffic with DRF Basic auth instead of pretending a browser
-// login workflow exists. Dev-only user seeding is refused unless ALLOW_E2E_USER_SEEDING=true
-// and PLAYWRIGHT_BASE_URL points at a known local development host.
 test.use({
   baseURL: BASE_URL,
   ignoreHTTPSErrors: true
@@ -23,37 +17,28 @@ test("traceability flow releases a controlled product spec and surfaces it in UI
   page,
   request
 }) => {
-  const health = await request.get("/api/health/", { timeout: 5_000 }).catch(() => null);
+  const health = await request.get("/api/health/", { timeout: 15_000 }).catch(() => null);
   test.skip(!health?.ok(), `Local stack is unavailable at ${BASE_URL}; start docker compose first.`);
-
-  const meiliHealth = await meiliRequest("/health").catch(() => null);
-  test.skip(
-    meiliHealth?.status !== "available",
-    `Meilisearch is unavailable at ${MEILI_URL}; set PLAYWRIGHT_MEILI_URL when it is not on localhost.`
-  );
 
   const userSetup = ensureE2EUser();
   if (!userSetup.ok) {
     throw new Error(userSetup.message);
   }
-  const credentials = userSetup.credentials;
+  const session = await loginWithSession(context, userSetup.credentials);
 
-  const auth = basicAuthHeader(credentials);
-  await authorizeBrowserApiRequests(context, auth);
-
-  const me = await getJson<{ username: string }>(request, "/api/accounts/me/", auth);
-  expect(me.username).toBe(credentials.username);
+  const me = await getJson<{ username: string }>(session.request, "/api/accounts/me/");
+  expect(me.username).toBe(userSetup.credentials.username);
 
   const stamp = new Date().toISOString().replace(/[-:.TZ]/g, "");
   const productName = `PW Traceable Film ${stamp}`;
   const specText = `Playwright traceability PDF text ${stamp} flame retardant polypropylene`;
 
-  const supplier = await createRecord(request, auth, "supplier", {
+  const supplier = await createRecord(session, "supplier", {
     supplier_name: `PW North Polymer Supply ${stamp}`,
     supplier_code: `PW-NPS-${stamp}`,
     approved_status: "Approved"
   });
-  const product = await createRecord(request, auth, "product", {
+  const product = await createRecord(session, "product", {
     commercial_name: productName,
     internal_grade: `PW-IF-${stamp}`,
     resin_family: "PP",
@@ -64,14 +49,13 @@ test("traceability flow releases a controlled product spec and surfaces it in UI
   expect(product.code).toMatch(/^PROD-\d{6}$/);
 
   const folder = await postJson<{ relative_path: string }>(
-    request,
+    session,
     `/api/records/${product.id}/folders/generate/`,
-    {},
-    auth
+    {}
   );
   expect(folder.relative_path).toContain(product.code);
 
-  const rawMaterial = await createRecord(request, auth, "raw_material", {
+  const rawMaterial = await createRecord(session, "raw_material", {
     supplier_material_code: `PW-RM-${stamp}`,
     material_family: "Base Resin",
     supplier: supplier.id,
@@ -80,7 +64,7 @@ test("traceability flow releases a controlled product spec and surfaces it in UI
     color: "Natural"
   });
   await postJson(
-    request,
+    session,
     "/api/relationships/",
     {
       source_record: product.id,
@@ -88,11 +72,10 @@ test("traceability flow releases a controlled product spec and surfaces it in UI
       relationship_type_key: "product_uses_material",
       data: { basis: "primary resin" }
     },
-    auth,
     201
   );
 
-  const productSpec = await createRecord(request, auth, "product_spec", {
+  const productSpec = await createRecord(session, "product_spec", {
     spec_number: `PW-SPEC-${stamp}`,
     product: product.id,
     revision: "A",
@@ -100,7 +83,7 @@ test("traceability flow releases a controlled product spec and surfaces it in UI
     release_notes: "Initial controlled release."
   });
   await postJson(
-    request,
+    session,
     "/api/relationships/",
     {
       source_record: product.id,
@@ -108,11 +91,10 @@ test("traceability flow releases a controlled product spec and surfaces it in UI
       relationship_type_key: "product_has_spec",
       data: { revision: "A" }
     },
-    auth,
     201
   );
 
-  const document = await uploadSpecPdf(request, auth, productSpec.id, specText);
+  const document = await uploadSpecPdf(session, productSpec.id, specText);
   const revision = document.current_revision;
   expect(revision.extraction_status).toBe("extracted");
 
@@ -122,28 +104,56 @@ test("traceability flow releases a controlled product spec and surfaces it in UI
   await expect(page.getByText("Extraction: extracted")).toBeVisible();
   await expect(page.getByText("Draft").first()).toBeVisible();
 
-  await page.getByRole("button", { name: /Draft To Technical Review/i }).click();
-  await completeTaskInUi(page, "Technical spec review");
+  await clickTransitionAndWait(
+    page,
+    productSpec.id,
+    "draft_to_technical_review",
+    /Draft To Technical Review/i
+  );
+  await completeTaskInUi(page, "Technical spec review", productSpec.id);
 
   await page.goto(`/records/${productSpec.id}`);
-  await page.getByRole("button", { name: /Technical Review To Approval/i }).click();
-  await completeTaskInUi(page, "Approver signoff");
+  await clickTransitionAndWait(
+    page,
+    productSpec.id,
+    "technical_review_to_approval",
+    /Technical Review To Approval/i
+  );
+  await completeTaskInUi(page, "Approver signoff", productSpec.id);
 
   await page.goto(`/records/${productSpec.id}`);
   await page.getByRole("button", { name: /Release revision A/i }).click();
   await expect(page.getByText("released").first()).toBeVisible();
-  await page.getByRole("button", { name: /Approval To Released/i }).click();
+  await clickTransitionAndWait(
+    page,
+    productSpec.id,
+    "approval_to_released",
+    /Approval To Released/i
+  );
   await expect(page.getByText("Released").first()).toBeVisible();
 
-  await indexSearchDocuments(product, rawMaterial, productSpec, document, specText);
-
-  await searchAndExpect(page, productName, productName);
-  await searchAndExpect(page, "flame retardant polypropylene", "Controlled Product Spec");
+  await searchEventually(page, productName, productName);
+  await searchEventually(page, "flame retardant polypropylene", "Controlled Product Spec");
 
   await page.goto("/audit");
-  await expect(page.getByText("document.revision_released")).toBeVisible();
-  await expect(page.getByText("workflow.transition_performed").first()).toBeVisible();
-  await expect(page.getByText("relationship.created").first()).toBeVisible();
+  const auditEvents = page.getByRole("list", { name: /audit events/i }).getByRole("listitem");
+  await expect(
+    auditEvents
+      .filter({ hasText: "document.revision_released" })
+      .filter({ hasText: `document:${document.id}` })
+  ).toBeVisible();
+  await expect(
+    auditEvents
+      .filter({ hasText: "workflow.transition_performed" })
+      .filter({ hasText: productSpec.id })
+      .first()
+  ).toBeVisible();
+  await expect(
+    auditEvents
+      .filter({ hasText: "relationship.created" })
+      .filter({ hasText: productSpec.id })
+      .first()
+  ).toBeVisible();
 });
 
 type RecordPayload = {
@@ -171,41 +181,85 @@ type DocumentPayload = {
   updated_at: string;
 };
 
-async function authorizeBrowserApiRequests(context: BrowserContext, authorization: string) {
-  await context.route("**/api/**", async (route) => {
-    await route.continue({
-      headers: {
-        ...route.request().headers(),
-        authorization
-      }
-    });
+type AuthenticatedSession = {
+  request: APIRequestContext;
+  csrfToken: string;
+};
+
+async function loginWithSession(context: BrowserContext, credentials: E2ECredentials) {
+  const csrf = await getJson<{ csrfToken: string }>(context.request, "/api/accounts/csrf/");
+  const response = await context.request.post("/api/accounts/login/", {
+    headers: {
+      "content-type": "application/json",
+      "x-csrftoken": csrf.csrfToken
+    },
+    data: credentials
   });
+  await expectJson(response, 200);
+  const refreshedCsrf = await getJson<{ csrfToken: string }>(
+    context.request,
+    "/api/accounts/csrf/"
+  );
+  return { request: context.request, csrfToken: refreshedCsrf.csrfToken };
 }
 
 async function createRecord(
-  request: APIRequestContext,
-  authorization: string,
+  session: AuthenticatedSession,
   objectTypeKey: string,
   data: Record<string, unknown>
 ) {
   return postJson<RecordPayload>(
-    request,
+    session,
     "/api/records/",
     {
       object_type_key: objectTypeKey,
       data
     },
-    authorization,
     201
   );
 }
 
-async function completeTaskInUi(page: Page, title: string) {
+async function clickTransitionAndWait(
+  page: Page,
+  recordId: string,
+  transitionKey: string,
+  buttonName: RegExp
+) {
+  const responsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      response.request().method() === "POST" &&
+      response.ok() &&
+      url.pathname === `/api/records/${recordId}/workflow/${transitionKey}/`
+    );
+  });
+
+  await page.getByRole("button", { name: buttonName }).click();
+  await responsePromise;
+}
+
+async function completeTaskInUi(page: Page, title: string, relatedRecordId: string) {
   await page.goto("/tasks");
-  const row = page.getByRole("row", { name: new RegExp(title, "i") });
+  const row = page
+    .getByRole("row")
+    .filter({ hasText: new RegExp(escapeRegExp(title), "i") })
+    .filter({ hasText: relatedRecordId });
   await expect(row).toBeVisible();
+  const responsePromise = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      response.request().method() === "POST" &&
+      response.ok() &&
+      /^\/api\/workflow-tasks\/\d+\/complete\/$/.test(url.pathname)
+    );
+  });
   await row.getByRole("button", { name: /Complete/i }).click();
+  await responsePromise;
   await expect(row).toHaveCount(0);
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 async function searchAndExpect(page: Page, query: string, expectedText: string) {
@@ -215,14 +269,22 @@ async function searchAndExpect(page: Page, query: string, expectedText: string) 
   await expect(page.getByText(expectedText).first()).toBeVisible();
 }
 
+async function searchEventually(page: Page, query: string, expectedText: string) {
+  await expect(async () => {
+    await searchAndExpect(page, query, expectedText);
+  }).toPass({
+    intervals: [500, 1_000, 2_000],
+    timeout: 30_000
+  });
+}
+
 async function uploadSpecPdf(
-  request: APIRequestContext,
-  authorization: string,
+  session: AuthenticatedSession,
   ownerRecordId: string,
   text: string
 ) {
-  const response = await request.post("/api/documents/", {
-    headers: { authorization },
+  const response = await session.request.post("/api/documents/", {
+    headers: { "x-csrftoken": session.csrfToken },
     multipart: {
       owner_record: ownerRecordId,
       title: "Controlled Product Spec",
@@ -241,24 +303,22 @@ async function uploadSpecPdf(
 async function getJson<T>(
   request: APIRequestContext,
   url: string,
-  authorization: string,
   expectedStatus = 200
 ) {
-  const response = await request.get(url, { headers: { authorization } });
+  const response = await request.get(url);
   return expectJson<T>(response, expectedStatus);
 }
 
 async function postJson<T>(
-  request: APIRequestContext,
+  session: AuthenticatedSession,
   url: string,
   data: unknown,
-  authorization: string,
   expectedStatus = 200
 ) {
-  const response = await request.post(url, {
+  const response = await session.request.post(url, {
     headers: {
-      authorization,
-      "content-type": "application/json"
+      "content-type": "application/json",
+      "x-csrftoken": session.csrfToken
     },
     data
   });
@@ -394,10 +454,6 @@ print(json.dumps({"username": username}))
   }
 }
 
-function basicAuthHeader(credentials: E2ECredentials) {
-  return `Basic ${Buffer.from(`${credentials.username}:${credentials.password}`).toString("base64")}`;
-}
-
 function pdfWithText(text: string) {
   const escapedText = text.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
   const stream = `BT /F1 16 Tf 72 720 Td (${escapedText}) Tj ET`;
@@ -425,98 +481,4 @@ function pdfWithText(text: string) {
   pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
 
   return Buffer.from(pdf, "ascii");
-}
-
-async function indexSearchDocuments(
-  product: RecordPayload,
-  rawMaterial: RecordPayload,
-  productSpec: RecordPayload,
-  document: DocumentPayload,
-  extractedText: string
-) {
-  await addDocuments("records", [
-    {
-      id: product.id,
-      object_type_key: product.object_type_key,
-      code: product.code,
-      title: product.title,
-      status: product.status,
-      data_text: jsonValues(product.data).join(" "),
-      relationship_text: [
-        "product_uses_material",
-        rawMaterial.code,
-        rawMaterial.title,
-        rawMaterial.object_type_key,
-        "product_has_spec",
-        productSpec.code,
-        productSpec.title,
-        productSpec.object_type_key
-      ].join(" "),
-      updated_at: product.updated_at
-    }
-  ]);
-  await addDocuments("documents", [
-    {
-      id: String(document.current_revision.id),
-      document_id: String(document.id),
-      record_id: productSpec.id,
-      title: document.title,
-      revision: document.current_revision.revision_label,
-      state: "released",
-      filename: document.current_revision.file_name,
-      extracted_text: extractedText,
-      updated_at: document.current_revision.updated_at
-    }
-  ]);
-}
-
-async function addDocuments(indexName: string, documents: unknown[]) {
-  const task = await meiliRequest(`/indexes/${indexName}/documents`, {
-    method: "POST",
-    body: JSON.stringify(documents)
-  });
-  await waitForMeiliTask(task.taskUid);
-}
-
-async function waitForMeiliTask(taskUid: number) {
-  for (let attempt = 0; attempt < 40; attempt += 1) {
-    const task = await meiliRequest(`/tasks/${taskUid}`);
-    if (task.status === "succeeded") {
-      return;
-    }
-    if (task.status === "failed") {
-      throw new Error(`Meilisearch task ${taskUid} failed: ${JSON.stringify(task)}`);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  throw new Error(`Timed out waiting for Meilisearch task ${taskUid}.`);
-}
-
-async function meiliRequest(pathname: string, init: RequestInit = {}) {
-  const response = await fetch(`${MEILI_URL}${pathname}`, {
-    ...init,
-    headers: {
-      authorization: `Bearer ${MEILI_MASTER_KEY}`,
-      "content-type": "application/json",
-      ...init.headers
-    }
-  });
-  if (!response.ok) {
-    throw new Error(`Meilisearch request failed ${response.status}: ${await response.text()}`);
-  }
-  return response.json();
-}
-
-function jsonValues(value: unknown): string[] {
-  if (value === null || value === undefined) {
-    return [];
-  }
-  if (Array.isArray(value)) {
-    return value.flatMap(jsonValues);
-  }
-  if (typeof value === "object") {
-    return Object.values(value).flatMap(jsonValues);
-  }
-  const text = String(value).trim();
-  return text ? [text] : [];
 }

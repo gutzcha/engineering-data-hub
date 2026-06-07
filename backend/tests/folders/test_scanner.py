@@ -2,7 +2,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 
-from apps.accounts.models import ObjectPermission
+from apps.accounts.models import ObjectPermission, RecordPermission
 from apps.folders.models import FolderChangeEvent, ManagedFolder
 from apps.folders.scanner import scan_managed_folder
 from apps.folders.services import generate_managed_folder
@@ -95,6 +95,27 @@ def test_direct_added_file_creates_pending_added_event(generated_folder, tmp_pat
 
 
 @pytest.mark.django_db
+def test_scanner_enqueues_created_folder_events_for_search(
+    generated_folder,
+    tmp_path,
+    monkeypatch,
+    django_capture_on_commit_callbacks,
+):
+    from apps.search import tasks
+
+    indexed_event_ids = []
+    monkeypatch.setattr(tasks.index_folder_event, "delay", lambda event_id: indexed_event_ids.append(event_id))
+    scan_managed_folder(generated_folder)
+    target = tmp_path / generated_folder.relative_path / "01_Specifications" / "indexed.txt"
+    target.write_text("first version", encoding="utf-8")
+
+    with django_capture_on_commit_callbacks(execute=True):
+        events = scan_managed_folder(generated_folder)
+
+    assert indexed_event_ids == [events[0].pk]
+
+
+@pytest.mark.django_db
 def test_file_added_before_first_scan_creates_pending_added_event(generated_folder, tmp_path):
     target = tmp_path / generated_folder.relative_path / "01_Specifications" / "pre-scan.txt"
     target.write_text("created before scanner ever ran", encoding="utf-8")
@@ -181,6 +202,34 @@ def test_review_routes_update_status(client, user_factory, generated_folder):
 
     assert ignore_response.status_code == 200
     assert ignored.review_status == "ignored"
+
+
+@pytest.mark.django_db
+def test_review_route_enqueues_folder_event_search_indexing(
+    client,
+    user_factory,
+    generated_folder,
+    monkeypatch,
+    django_capture_on_commit_callbacks,
+):
+    from apps.search import tasks
+
+    event = FolderChangeEvent.objects.create(
+        event_type="added",
+        path=f"{generated_folder.relative_path}/01_Specifications/review-index.txt",
+        detected_hash="abc",
+        matched_record=generated_folder.record,
+        managed_folder=generated_folder,
+    )
+    indexed_event_ids = []
+    monkeypatch.setattr(tasks.index_folder_event, "delay", lambda event_id: indexed_event_ids.append(event_id))
+    client.force_login(user_factory("folder-index-admin", is_superuser=True))
+
+    with django_capture_on_commit_callbacks(execute=True):
+        response = client.post(f"/api/folder-events/{event.pk}/accept/")
+
+    assert response.status_code == 200
+    assert indexed_event_ids == [event.pk]
 
 
 @pytest.mark.django_db
@@ -346,6 +395,50 @@ def test_review_inbox_filters_events_by_view_permission(client, user_factory):
     assert hidden_response.status_code == 404
     assert supplier_response.status_code == 404
     assert unmatched_response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_review_inbox_filters_events_by_record_level_permission(client, user_factory):
+    first = Record.objects.create(
+        object_type_key="product",
+        code="PROD-000041",
+        title="Visible Folder Product",
+        schema_version=1,
+        data={},
+    )
+    second = Record.objects.create(
+        object_type_key="product",
+        code="PROD-000042",
+        title="Hidden Folder Product",
+        schema_version=1,
+        data={},
+    )
+    visible = FolderChangeEvent.objects.create(
+        event_type="added",
+        path="Products/PROD-000041/spec.txt",
+        matched_record=first,
+    )
+    hidden = FolderChangeEvent.objects.create(
+        event_type="added",
+        path="Products/PROD-000042/spec.txt",
+        matched_record=second,
+    )
+    RecordPermission.objects.create(
+        role_name="Scoped Folder Viewer",
+        object_type_key="product",
+        record=first,
+        can_view=True,
+    )
+    client.force_login(user_factory("scoped-folder-viewer", "Scoped Folder Viewer"))
+
+    list_response = client.get("/api/folder-events/")
+    visible_response = client.get(f"/api/folder-events/{visible.pk}/")
+    hidden_response = client.get(f"/api/folder-events/{hidden.pk}/")
+
+    assert list_response.status_code == 200
+    assert [event["id"] for event in list_response.json()] == [visible.pk]
+    assert visible_response.status_code == 200
+    assert hidden_response.status_code == 404
 
 
 @pytest.mark.django_db

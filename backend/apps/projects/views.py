@@ -6,7 +6,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.permissions import user_can
+from apps.accounts.permissions import records_user_can_view, user_has_view_scope, user_can
 from apps.projects.models import (
     Project,
     ProjectTask,
@@ -14,6 +14,7 @@ from apps.projects.models import (
 )
 from apps.projects.serializers import ProjectTaskDependencySerializer, ProjectTaskSerializer
 from apps.projects.services import add_task_dependency, move_task
+from apps.records.models import Record
 
 
 class IsAuthenticated(permissions.BasePermission):
@@ -148,13 +149,18 @@ class ProjectWorkloadView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        if not user_can(request.user, "view", "project"):
+        if not user_has_view_scope(request.user, "project"):
             raise PermissionDenied("You do not have permission to view projects.")
+        visible_project_record_ids = records_user_can_view(
+            request.user,
+            Record.objects.filter(object_type_key="project"),
+        ).values_list("pk", flat=True)
         rows = (
             ProjectTask.objects.exclude(state=ProjectTask.State.DONE)
             .exclude(assignee_user__isnull=True)
             .select_related("project__record")
             .filter(project__record__object_type_key="project")
+            .filter(project__record_id__in=visible_project_record_ids)
             .values("assignee_user", "assignee_user__username")
             .annotate(
                 open_tasks=Count("id"),

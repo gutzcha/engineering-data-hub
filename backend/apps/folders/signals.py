@@ -9,6 +9,7 @@ from apps.folders.models import FolderChangeEvent
 from apps.folders.services import generate_managed_folder
 from apps.folders.templates import default_template_key, render_folder_template
 from apps.records.models import Record
+from apps.search.tasks import enqueue_folder_event_index
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +38,10 @@ def _record_generation_failed(record):
         path = render_folder_template(record).root
     except ValueError:
         path = ""
-    FolderChangeEvent.objects.get_or_create(
+    event, _created = FolderChangeEvent.objects.get_or_create(
         event_type=FolderChangeEvent.EventType.GENERATION_FAILED,
         path=path,
         matched_record=record,
         review_status=FolderChangeEvent.ReviewStatus.PENDING,
     )
+    enqueue_folder_event_index(event.pk)

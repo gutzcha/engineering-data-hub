@@ -194,14 +194,15 @@ class ProjectStatusExportView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        if not user_can(request.user, "view", "project"):
-            raise PermissionDenied("You do not have permission to view projects.")
         workbook = Workbook()
         sheet = workbook.active
         sheet.title = "Project Status"
         sheet.append(["Code", "Project", "Status", "Open Tasks", "Total Tasks"])
         projects = Project.objects.select_related("record").prefetch_related("tasks").order_by("name")
+        appended_rows = 0
         for project in projects:
+            if not user_can(request.user, "view", "project", record_id=str(project.record_id)):
+                continue
             tasks = list(project.tasks.all())
             open_tasks = [task for task in tasks if task.state != "done"]
             sheet.append(
@@ -213,6 +214,9 @@ class ProjectStatusExportView(APIView):
                     len(tasks),
                 ]
             )
+            appended_rows += 1
+        if appended_rows == 0 and not user_can(request.user, "view", "project"):
+            raise PermissionDenied("You do not have permission to view projects.")
         return _xlsx_response(workbook, "project-status.xlsx")
 
 
@@ -268,7 +272,12 @@ def _can_import_or_edit(user, object_type_key):
 def _append_import_events(sheet, user):
     events = ImportAuditEvent.objects.select_related("record", "actor").order_by("created_at", "id")
     for event in events:
-        if event.record and not user_can(user, "view", event.record.object_type_key):
+        if event.record and not user_can(
+            user,
+            "view",
+            event.record.object_type_key,
+            record_id=str(event.record_id),
+        ):
             continue
         sheet.append(
             [
@@ -289,7 +298,7 @@ def _append_folder_events(sheet, user):
     )
     for event in events:
         record = event.matched_record
-        if record and not user_can(user, "view", record.object_type_key):
+        if record and not user_can(user, "view", record.object_type_key, record_id=str(record.pk)):
             continue
         sheet.append(
             [
@@ -304,13 +313,13 @@ def _append_folder_events(sheet, user):
 
 
 def _append_project_events(sheet, user):
-    if not user_can(user, "view", "project"):
-        return
     events = ProjectEvent.objects.select_related("project__record", "actor").order_by(
         "created_at",
         "id",
     )
     for event in events:
+        if not user_can(user, "view", "project", record_id=str(event.project.record_id)):
+            continue
         sheet.append(
             [
                 "project",
@@ -330,7 +339,7 @@ def _append_workflow_events(sheet, user):
     )
     for event in events:
         record = event.instance.record
-        if not user_can(user, "view", record.object_type_key):
+        if not user_can(user, "view", record.object_type_key, record_id=str(record.pk)):
             continue
         sheet.append(
             [

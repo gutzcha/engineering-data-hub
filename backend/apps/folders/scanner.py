@@ -5,6 +5,7 @@ from django.db import transaction
 
 from apps.folders.models import FolderChangeEvent, FolderFileSnapshot, ManagedFolder
 from apps.folders.services import managed_root, managed_path, validate_relative_path
+from apps.search.tasks import enqueue_folder_event_indexes
 
 
 def scan_all_managed_folders():
@@ -82,6 +83,7 @@ def scan_managed_folder(managed_folder):
 
         _replace_snapshots(managed_folder, current, tree_hash)
 
+    enqueue_folder_event_indexes(event.pk for event in events)
     return events
 
 

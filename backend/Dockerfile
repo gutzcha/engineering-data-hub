@@ -12,6 +12,7 @@ RUN apt-get update \
         libpq-dev \
         gcc \
         postgresql-client \
+        tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
 
 COPY . .

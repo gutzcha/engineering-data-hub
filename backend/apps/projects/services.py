@@ -13,6 +13,7 @@ from apps.projects.models import (
     ProjectTaskDependency,
 )
 from apps.records.serializers import RecordSerializer
+from apps.search.tasks import enqueue_record_index
 
 
 @transaction.atomic
@@ -41,6 +42,7 @@ def create_project(
     )
     serializer.is_valid(raise_exception=True)
     record = serializer.save()
+    enqueue_record_index(record.pk)
     project = Project.objects.create(
         record=record,
         name=name,

@@ -1,7 +1,7 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
-from apps.accounts.models import ObjectPermission
+from apps.accounts.models import ObjectPermission, RecordPermission
 
 
 class ObjectPermissionSerializer(serializers.ModelSerializer):
@@ -11,6 +11,22 @@ class ObjectPermissionSerializer(serializers.ModelSerializer):
             "id",
             "role_name",
             "object_type_key",
+            "can_view",
+            "can_create",
+            "can_edit",
+            "can_release",
+            "can_admin",
+        ]
+
+
+class RecordPermissionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RecordPermission
+        fields = [
+            "id",
+            "role_name",
+            "object_type_key",
+            "record",
             "can_view",
             "can_create",
             "can_edit",

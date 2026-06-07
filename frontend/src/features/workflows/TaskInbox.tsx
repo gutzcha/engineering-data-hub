@@ -15,20 +15,21 @@ export type WorkflowTask = {
   summary?: string;
   state?: string;
   status?: string;
-  assigned_to?: string | { id?: string | number; username?: string; name?: string; email?: string };
-  assignee?: string | { id?: string | number; username?: string; name?: string; email?: string };
-  assignee_user?: string | number | { id?: string | number; username?: string; name?: string; email?: string };
+  assigned_to?: string | { id?: string | number; username?: string; name?: string; email?: string } | null;
+  assignee?: string | { id?: string | number; username?: string; name?: string; email?: string } | null;
+  assignee_user?: string | number | { id?: string | number; username?: string; name?: string; email?: string } | null;
   assigned_role?: string;
-  assignee_role?: string | { id?: string | number; name?: string; label?: string };
+  assignee_role?: string | { id?: string | number; name?: string; label?: string } | null;
   role?: string;
   due_at?: string;
   due_date?: string;
   related_object_type?: string;
   object_type?: string;
-  related_object_id?: string | number;
-  related_record?: string | number | { id?: string | number; code?: string; title?: string };
-  related_document?: string | number | { id?: string | number; title?: string };
-  record?: string | number | { id?: string | number; code?: string; title?: string };
+  related_object_id?: string | number | null;
+  related_record?: string | number | { id?: string | number; code?: string; title?: string } | null;
+  related_document?: string | number | { id?: string | number; title?: string } | null;
+  related_project?: string | number | { id?: string | number; title?: string } | null;
+  record?: string | number | { id?: string | number; code?: string; title?: string } | null;
   transition_key?: string;
   transition_label?: string;
   created_at?: string;
@@ -322,6 +323,10 @@ function taskObjectType(task: WorkflowTask) {
     return "document";
   }
 
+  if (task.related_project !== undefined && task.related_project !== null && task.related_project !== "") {
+    return "project";
+  }
+
   if (task.related_record !== undefined && task.related_record !== null) {
     return "record";
   }
@@ -362,7 +367,7 @@ function taskRole(task: WorkflowTask) {
 }
 
 function isAssignedToUser(task: WorkflowTask, currentUser: string, currentUserId?: string | number) {
-  if (currentUserId !== undefined && task.assignee_user !== undefined) {
+  if (currentUserId !== undefined && task.assignee_user !== undefined && task.assignee_user !== null) {
     const assigneeId =
       typeof task.assignee_user === "object" ? task.assignee_user.id : task.assignee_user;
     return String(assigneeId) === String(currentUserId);
@@ -401,17 +406,28 @@ function taskHref(task: WorkflowTask) {
 }
 
 function taskRelatedId(task: WorkflowTask) {
-  const relatedRecord =
-    typeof task.related_record === "object" ? task.related_record.id : task.related_record;
-  const relatedDocument =
-    typeof task.related_document === "object" ? task.related_document.id : task.related_document;
+  const relatedRecord = relationId(task.related_record);
+  const relatedDocument = relationId(task.related_document);
+  const relatedProject = relationId(task.related_project);
+  const record = relationId(task.record);
 
   return (
     task.related_object_id ??
     relatedDocument ??
+    relatedProject ??
     relatedRecord ??
-    (typeof task.record === "object" ? task.record.id : task.record)
+    record
   );
+}
+
+function relationId(
+  relation?: string | number | { id?: string | number } | null
+) {
+  if (relation === undefined || relation === null || relation === "") {
+    return undefined;
+  }
+
+  return typeof relation === "object" ? relation.id : relation;
 }
 
 function rolesFromUser(user?: CurrentUser) {

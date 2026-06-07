@@ -3,7 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
-from apps.accounts.permissions import user_can
+from apps.accounts.permissions import records_user_can_view, user_can, user_has_view_scope
 from apps.audit.services import record_audit_event
 from apps.audit.views import audit_response, record_audit_events
 from apps.folders.services import ManagedFolderCollisionError, generate_managed_folder
@@ -11,6 +11,7 @@ from apps.records.models import Record
 from apps.records.serializers import RecordSerializer, _record_snapshot
 from apps.records.validation import get_object_type_definition, validate_record_data
 from apps.relationships.services import build_record_graph
+from apps.search.tasks import enqueue_record_index
 
 
 class IsAuthenticated(permissions.BasePermission):
@@ -30,15 +31,9 @@ class RecordViewSet(viewsets.ModelViewSet):
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
         object_type_key = self.request.query_params.get("object_type_key")
-        if object_type_key and not user_can(request.user, "view", object_type_key):
+        if object_type_key and not user_has_view_scope(request.user, object_type_key):
             raise PermissionDenied("You do not have permission to view this object type.")
-
-        visible_keys = [
-            key
-            for key in queryset.values_list("object_type_key", flat=True).distinct()
-            if user_can(request.user, "view", key)
-        ]
-        queryset = queryset.filter(object_type_key__in=visible_keys)
+        queryset = records_user_can_view(request.user, queryset)
         page = self.paginate_queryset(queryset)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
@@ -50,7 +45,8 @@ class RecordViewSet(viewsets.ModelViewSet):
         object_type_key = serializer.validated_data["object_type_key"]
         if not user_can(self.request.user, "create", object_type_key):
             raise PermissionDenied("You do not have permission to create this object type.")
-        serializer.save()
+        record = serializer.save()
+        enqueue_record_index(record.pk)
 
     def get_object(self):
         record = super().get_object()
@@ -62,7 +58,8 @@ class RecordViewSet(viewsets.ModelViewSet):
         record = self.get_object()
         if not user_can(self.request.user, "edit", record.object_type_key, record_id=str(record.pk)):
             raise PermissionDenied("You do not have permission to edit this record.")
-        serializer.save()
+        record = serializer.save()
+        enqueue_record_index(record.pk)
 
     @action(detail=True, methods=["post"])
     def release(self, request, pk=None):
@@ -76,6 +73,7 @@ class RecordViewSet(viewsets.ModelViewSet):
         record.schema_version = active_config.version
         record.updated_by = request.user
         record.save(update_fields=["status", "schema_version", "updated_by", "updated_at"])
+        enqueue_record_index(record.pk)
         record_audit_event(
             request.user,
             "record.released",

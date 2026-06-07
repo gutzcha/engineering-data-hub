@@ -7,6 +7,7 @@ from django.db import transaction
 from apps.audit.services import record_audit_event, snapshot_model
 from apps.folders.models import FolderChangeEvent, ManagedFolder
 from apps.folders.templates import TEMPLATE_CHILDREN, default_template_key, render_folder_template
+from apps.search.tasks import enqueue_folder_event_index
 
 
 EMPTY_TREE_HASH = hashlib.sha256().hexdigest()
@@ -146,6 +147,7 @@ def _record_collision_event(record, collision_path, *, actor=None, managed_folde
     if managed_folder and not event.managed_folder:
         event.managed_folder = managed_folder
         event.save(update_fields=["managed_folder", "updated_at"])
+    enqueue_folder_event_index(event.pk)
     return event
 
 

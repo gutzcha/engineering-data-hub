@@ -39,7 +39,9 @@ describe("TaskInbox", () => {
               assignee_role: "Quality",
               due_date: "2026-06-06",
               state: "open",
-              related_record: 101
+              related_record: 101,
+              related_document: null,
+              related_project: ""
             },
             {
               id: 2,

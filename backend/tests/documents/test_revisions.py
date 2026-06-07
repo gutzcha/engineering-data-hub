@@ -364,6 +364,62 @@ def test_released_revision_is_immutable_and_new_label_is_required(
 
 
 @pytest.mark.django_db
+def test_document_revision_create_and_release_enqueue_search_indexing(
+    client,
+    user_factory,
+    document_permissions,
+    product_record,
+    settings,
+    tmp_path,
+    monkeypatch,
+    django_capture_on_commit_callbacks,
+):
+    from apps.search import tasks
+
+    settings.MEDIA_ROOT = tmp_path
+    indexed_revision_ids = []
+    monkeypatch.setattr(
+        tasks.index_document_revision,
+        "delay",
+        lambda revision_id: indexed_revision_ids.append(revision_id),
+    )
+    engineer = user_factory("doc-index-engineer", "Engineer")
+    approver = user_factory("doc-index-approver", "Approver")
+
+    with django_capture_on_commit_callbacks(execute=True):
+        client.force_login(engineer)
+        created = client.post(
+            "/api/documents/",
+            {
+                "owner_record": str(product_record.pk),
+                "title": "Indexed Specification",
+                "document_type": "specification",
+                "revision_label": "A",
+                "file": upload("indexed-a.txt", b"draft text"),
+            },
+        )
+        assert created.status_code == 201
+        document_id = created.json()["id"]
+        first_revision_id = created.json()["current_revision"]["id"]
+
+        added = client.post(
+            f"/api/documents/{document_id}/revisions/",
+            {
+                "revision_label": "B",
+                "file": upload("indexed-b.txt", b"release text"),
+            },
+        )
+        assert added.status_code == 201
+        second_revision_id = added.json()["id"]
+
+        client.force_login(approver)
+        released = client.post(f"/api/documents/{document_id}/revisions/{second_revision_id}/release/")
+        assert released.status_code == 200
+
+    assert indexed_revision_ids == [first_revision_id, second_revision_id, second_revision_id]
+
+
+@pytest.mark.django_db
 def test_same_label_integrity_error_returns_conflict_response(
     client,
     user_factory,

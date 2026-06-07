@@ -5,6 +5,7 @@ from apps.accounts.permissions import user_can
 from apps.audit.services import record_audit_event
 from apps.relationships.models import Relationship
 from apps.relationships.serializers import RelationshipSerializer
+from apps.search.tasks import enqueue_record_indexes
 
 
 class IsAuthenticated(permissions.BasePermission):
@@ -40,6 +41,7 @@ class RelationshipViewSet(
         ):
             raise PermissionDenied("You do not have permission to view the target record.")
         relationship = serializer.save()
+        enqueue_record_indexes([source_record.pk, target_record.pk])
         record_audit_event(
             self.request.user,
             "relationship.created",
@@ -66,7 +68,9 @@ class RelationshipViewSet(
             after=None,
             request=self.request,
         )
+        record_ids = [instance.source_record_id, instance.target_record_id]
         instance.delete()
+        enqueue_record_indexes(record_ids)
 
 
 def _relationship_snapshot(relationship):

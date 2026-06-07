@@ -8,12 +8,9 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from apps.accounts.models import ObjectPermission
 from apps.config_registry.services import create_draft_from_current, publish_draft
 from apps.documents.models import Document, DocumentRevision
-from apps.records.models import Record
 from apps.search.indexers import (
     DOCUMENTS_INDEX,
     RECORDS_INDEX,
-    build_document_revision_payload,
-    build_record_payload,
 )
 from apps.workflows.models import WorkflowInstance, WorkflowTask
 
@@ -67,166 +64,176 @@ def test_traceability_flow_releases_searches_and_audits_product_spec(
     system_admin,
     tmp_path,
     extracted_spec_text,
+    django_capture_on_commit_callbacks,
 ):
     settings.MANAGED_FILE_ROOT = tmp_path / "managed"
     settings.MEDIA_ROOT = tmp_path / "media"
+    from apps.search import tasks as search_tasks
+
+    fake_search_client = FakeSearchClient()
+    monkeypatch.setattr("apps.search.tasks.get_search_client", lambda: fake_search_client)
+    monkeypatch.setattr("apps.search.views.get_search_client", lambda: fake_search_client)
+    monkeypatch.setattr(
+        search_tasks.index_record,
+        "delay",
+        lambda record_id: search_tasks.index_record(record_id),
+    )
+    monkeypatch.setattr(
+        search_tasks.index_document_revision,
+        "delay",
+        lambda revision_id: search_tasks.index_document_revision(revision_id),
+    )
     client.force_login(system_admin)
 
-    unique_suffix = "E2E-2201"
-    supplier = _create_record(
-        client,
-        "supplier",
-        {
-            "supplier_name": f"North Polymer Supply {unique_suffix}",
-            "supplier_code": f"NPS-{unique_suffix}",
-            "approved_status": "Approved",
-        },
-    )
-    product_name = f"Traceable Film {unique_suffix}"
-    product = _create_record(
-        client,
-        "product",
-        {
-            "commercial_name": product_name,
-            "internal_grade": f"IF-{unique_suffix}",
-            "resin_family": "PP",
-            "application": "Medical packaging",
-            "color": "Natural",
-        },
-    )
+    with django_capture_on_commit_callbacks(execute=True):
+        unique_suffix = "E2E-2201"
+        supplier = _create_record(
+            client,
+            "supplier",
+            {
+                "supplier_name": f"North Polymer Supply {unique_suffix}",
+                "supplier_code": f"NPS-{unique_suffix}",
+                "approved_status": "Approved",
+            },
+        )
+        product_name = f"Traceable Film {unique_suffix}"
+        product = _create_record(
+            client,
+            "product",
+            {
+                "commercial_name": product_name,
+                "internal_grade": f"IF-{unique_suffix}",
+                "resin_family": "PP",
+                "application": "Medical packaging",
+                "color": "Natural",
+            },
+        )
 
-    assert product["code"] == "PROD-000001"
-    assert product["title"] == product_name
-    assert product["schema_version"] == starter_config.version
+        assert product["code"] == "PROD-000001"
+        assert product["title"] == product_name
+        assert product["schema_version"] == starter_config.version
 
-    folder_response = client.post(f"/api/records/{product['id']}/folders/generate/")
-    assert_status(folder_response, 200)
-    folder = folder_response.json()
-    assert folder["relative_path"] == f"Products/{product['code']}_{product_name.replace(' ', '_')}"
-    assert (settings.MANAGED_FILE_ROOT / folder["relative_path"]).is_dir()
+        folder_response = client.post(f"/api/records/{product['id']}/folders/generate/")
+        assert_status(folder_response, 200)
+        folder = folder_response.json()
+        expected_folder = f"Products/{product['code']}_{product_name.replace(' ', '_')}"
+        assert folder["relative_path"] == expected_folder
+        assert (settings.MANAGED_FILE_ROOT / folder["relative_path"]).is_dir()
 
-    raw_material = _create_record(
-        client,
-        "raw_material",
-        {
-            "supplier_material_code": f"RM-{unique_suffix}",
-            "material_family": "Base Resin",
-            "supplier": supplier["id"],
-            "melt_flow_index": 12.5,
-            "density": 0.91,
-            "color": "Natural",
-        },
-    )
-    relationship_response = post_json(
-        client,
-        "/api/relationships/",
-        {
-            "source_record": product["id"],
-            "target_record": raw_material["id"],
-            "relationship_type_key": "product_uses_material",
-            "data": {"basis": "primary resin"},
-        },
-    )
-    assert_status(relationship_response, 201)
+        raw_material = _create_record(
+            client,
+            "raw_material",
+            {
+                "supplier_material_code": f"RM-{unique_suffix}",
+                "material_family": "Base Resin",
+                "supplier": supplier["id"],
+                "melt_flow_index": 12.5,
+                "density": 0.91,
+                "color": "Natural",
+            },
+        )
+        relationship_response = post_json(
+            client,
+            "/api/relationships/",
+            {
+                "source_record": product["id"],
+                "target_record": raw_material["id"],
+                "relationship_type_key": "product_uses_material",
+                "data": {"basis": "primary resin"},
+            },
+        )
+        assert_status(relationship_response, 201)
 
-    product_spec = _create_record(
-        client,
-        "product_spec",
-        {
-            "spec_number": f"SPEC-{unique_suffix}",
-            "product": product["id"],
-            "revision": "A",
-            "effective_date": "2026-06-07",
-            "release_notes": "Initial controlled release.",
-        },
-    )
-    product_spec_relationship = post_json(
-        client,
-        "/api/relationships/",
-        {
-            "source_record": product["id"],
-            "target_record": product_spec["id"],
-            "relationship_type_key": "product_has_spec",
-            "data": {"revision": "A"},
-        },
-    )
-    assert_status(product_spec_relationship, 201)
+        product_spec = _create_record(
+            client,
+            "product_spec",
+            {
+                "spec_number": f"SPEC-{unique_suffix}",
+                "product": product["id"],
+                "revision": "A",
+                "effective_date": "2026-06-07",
+                "release_notes": "Initial controlled release.",
+            },
+        )
+        product_spec_relationship = post_json(
+            client,
+            "/api/relationships/",
+            {
+                "source_record": product["id"],
+                "target_record": product_spec["id"],
+                "relationship_type_key": "product_has_spec",
+                "data": {"revision": "A"},
+            },
+        )
+        assert_status(product_spec_relationship, 201)
 
-    document_response = client.post(
-        "/api/documents/",
-        {
-            "owner_record": product_spec["id"],
-            "title": "Controlled Product Spec",
-            "document_type": "controlled_document",
-            "revision_label": "A",
-            "file": product_spec_pdf,
-        },
-    )
-    assert_status(document_response, 201)
-    document = document_response.json()
-    revision = document["current_revision"]
-    assert revision["extraction_status"] == DocumentRevision.ExtractionStatus.EXTRACTED
-    assert revision["state"] == DocumentRevision.State.DRAFT
+        document_response = client.post(
+            "/api/documents/",
+            {
+                "owner_record": product_spec["id"],
+                "title": "Controlled Product Spec",
+                "document_type": "controlled_document",
+                "revision_label": "A",
+                "file": product_spec_pdf,
+            },
+        )
+        assert_status(document_response, 201)
+        document = document_response.json()
+        revision = document["current_revision"]
+        assert revision["extraction_status"] == DocumentRevision.ExtractionStatus.EXTRACTED
+        assert revision["state"] == DocumentRevision.State.DRAFT
 
-    preview_response = client.get(f"/api/documents/{document['id']}/preview/")
-    assert_status(preview_response, 200)
-    assert extracted_spec_text in preview_response.json()["extracted_text"]
+        preview_response = client.get(f"/api/documents/{document['id']}/preview/")
+        assert_status(preview_response, 200)
+        assert extracted_spec_text in preview_response.json()["extracted_text"]
 
-    workflow_response = client.get(f"/api/records/{product_spec['id']}/workflow/")
-    assert_status(workflow_response, 200)
-    assert workflow_response.json()["state"] == "draft"
+        workflow_response = client.get(f"/api/records/{product_spec['id']}/workflow/")
+        assert_status(workflow_response, 200)
+        assert workflow_response.json()["state"] == "draft"
 
-    technical_review = post_json(
-        client,
-        f"/api/records/{product_spec['id']}/workflow/draft_to_technical_review/",
-        {"comment": "Spec package ready for technical review."},
-    )
-    assert_status(technical_review, 200)
-    _complete_task(client, product_spec["id"], "technical_spec_review")
+        technical_review = post_json(
+            client,
+            f"/api/records/{product_spec['id']}/workflow/draft_to_technical_review/",
+            {"comment": "Spec package ready for technical review."},
+        )
+        assert_status(technical_review, 200)
+        _complete_task(client, product_spec["id"], "technical_spec_review")
 
-    approval = post_json(
-        client,
-        f"/api/records/{product_spec['id']}/workflow/technical_review_to_approval/",
-        {"comment": "Technical review complete."},
-    )
-    assert_status(approval, 200)
-    _complete_task(client, product_spec["id"], "approver_signoff")
+        approval = post_json(
+            client,
+            f"/api/records/{product_spec['id']}/workflow/technical_review_to_approval/",
+            {"comment": "Technical review complete."},
+        )
+        assert_status(approval, 200)
+        _complete_task(client, product_spec["id"], "approver_signoff")
 
-    release_revision_response = post_json(
-        client,
-        f"/api/documents/{document['id']}/revisions/{revision['id']}/release/",
-        {},
-    )
-    assert_status(release_revision_response, 200)
-    assert release_revision_response.json()["state"] == DocumentRevision.State.RELEASED
+        release_revision_response = post_json(
+            client,
+            f"/api/documents/{document['id']}/revisions/{revision['id']}/release/",
+            {},
+        )
+        assert_status(release_revision_response, 200)
+        assert release_revision_response.json()["state"] == DocumentRevision.State.RELEASED
 
-    release_workflow = post_json(
-        client,
-        f"/api/records/{product_spec['id']}/workflow/approval_to_released/",
-        {"comment": "Controlled document revision released."},
-    )
-    assert_status(release_workflow, 200)
-    assert release_workflow.json()["state"] == "released"
+        release_workflow = post_json(
+            client,
+            f"/api/records/{product_spec['id']}/workflow/approval_to_released/",
+            {"comment": "Controlled document revision released."},
+        )
+        assert_status(release_workflow, 200)
+        assert release_workflow.json()["state"] == "released"
 
-    refreshed_product = Record.objects.get(pk=product["id"])
-    refreshed_revision = DocumentRevision.objects.select_related("document__owner_record").get(
-        pk=revision["id"]
-    )
     search_viewer = _create_search_viewer()
     client.force_login(search_viewer)
-    monkeypatch.setattr(
-        "apps.search.views.get_search_client",
-        lambda: FakeSearchClient(refreshed_product, refreshed_revision),
-    )
 
-    product_search = client.get(f"/api/search/?q={product_name}&type=records")
+    product_search = client.get(f"/api/search/?q=IF-{unique_suffix}&type=records")
     assert_status(product_search, 200)
     assert product_search.json()["results"] == [
         {
             "type": "record",
             "title": product_name,
             "code": product["code"],
-            "snippet": build_record_payload(refreshed_product)["data_text"],
+            "snippet": fake_search_client.documents[RECORDS_INDEX][product["id"]]["data_text"],
             "object_type_key": "product",
             "status": "draft",
             "url": f"/records/{product['id']}",
@@ -275,15 +282,35 @@ def test_traceability_flow_releases_searches_and_audits_product_spec(
 class FakeSearchClient:
     enabled = True
 
-    def __init__(self, product, revision):
-        self.product_payload = build_record_payload(product)
-        self.revision_payload = build_document_revision_payload(revision)
+    def __init__(self):
+        self.documents = {
+            RECORDS_INDEX: {},
+            DOCUMENTS_INDEX: {},
+        }
+
+    def add_documents(self, index_name, documents):
+        self.documents.setdefault(index_name, {})
+        for document in documents:
+            self.documents[index_name][document["id"]] = document
+        return {"indexed": len(documents)}
 
     def search(self, index_name, query, **_params):
         if index_name == RECORDS_INDEX:
-            return {"hits": self._matching_hits([self.product_payload], query, "data_text")}
+            return {
+                "hits": self._matching_hits(
+                    self.documents.get(RECORDS_INDEX, {}).values(),
+                    query,
+                    "data_text",
+                )
+            }
         if index_name == DOCUMENTS_INDEX:
-            return {"hits": self._matching_hits([self.revision_payload], query, "extracted_text")}
+            return {
+                "hits": self._matching_hits(
+                    self.documents.get(DOCUMENTS_INDEX, {}).values(),
+                    query,
+                    "extracted_text",
+                )
+            }
         return {"hits": []}
 
     def _matching_hits(self, payloads, query, formatted_field):

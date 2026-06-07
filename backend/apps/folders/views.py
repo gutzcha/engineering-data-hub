@@ -9,14 +9,14 @@ from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 
-from apps.accounts.permissions import SYSTEM_ADMIN_ROLE, user_can
-from apps.accounts.models import ObjectPermission
+from apps.accounts.permissions import SYSTEM_ADMIN_ROLE, records_user_can_view, user_can
 from apps.audit.services import record_audit_event, snapshot_model
 from apps.documents.models import Document
 from apps.documents.serializers import DocumentSerializer
 from apps.folders.models import FolderChangeEvent
 from apps.folders.serializers import FolderChangeEventSerializer
 from apps.folders.services import validate_relative_path
+from apps.search.tasks import enqueue_folder_event_index
 
 
 class IsAuthenticated(permissions.BasePermission):
@@ -82,6 +82,7 @@ class FolderChangeEventViewSet(viewsets.ReadOnlyModelViewSet):
             event.review_status = FolderChangeEvent.ReviewStatus.LINKED
             event.reviewer = request.user
             event.save(update_fields=["review_status", "reviewer", "updated_at"])
+            enqueue_folder_event_index(event.pk)
             after = _folder_event_snapshot(event)
             after["linked_document_id"] = document.pk
             after["linked_path"] = linked_path
@@ -110,6 +111,7 @@ class FolderChangeEventViewSet(viewsets.ReadOnlyModelViewSet):
         before = _folder_event_snapshot(event)
         event.assigned_to = _assignee_from_request(request)
         event.save(update_fields=["assigned_to", "updated_at"])
+        enqueue_folder_event_index(event.pk)
         record_audit_event(
             request.user,
             "folder_event.assigned",
@@ -128,6 +130,7 @@ class FolderChangeEventViewSet(viewsets.ReadOnlyModelViewSet):
         event.review_status = review_status
         event.reviewer = request.user
         event.save(update_fields=["review_status", "reviewer", "updated_at"])
+        enqueue_folder_event_index(event.pk)
         record_audit_event(
             request.user,
             f"folder_event.{review_status}",
@@ -163,14 +166,17 @@ def _filter_visible_events(user, queryset):
     if user.is_superuser or _is_system_admin(user):
         return queryset
 
-    role_names = user.groups.values_list("name", flat=True)
-    visible_object_type_keys = ObjectPermission.objects.filter(
-        role_name__in=role_names,
-        can_view=True,
-    ).values_list("object_type_key", flat=True)
+    from apps.records.models import Record
+
+    visible_record_ids = records_user_can_view(
+        user,
+        Record.objects.filter(
+            Q(folder_change_events__isnull=False) | Q(managed_folders__change_events__isnull=False)
+        ),
+    ).values_list("pk", flat=True).distinct()
     return queryset.filter(
-        Q(matched_record__object_type_key__in=visible_object_type_keys)
-        | Q(managed_folder__record__object_type_key__in=visible_object_type_keys)
+        Q(matched_record_id__in=visible_record_ids)
+        | Q(managed_folder__record_id__in=visible_record_ids)
     )
 
 

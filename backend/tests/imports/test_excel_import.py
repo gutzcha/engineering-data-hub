@@ -6,7 +6,7 @@ from django.contrib.auth.models import Group
 from django.core.files.base import ContentFile
 from openpyxl import Workbook, load_workbook
 
-from apps.accounts.models import ObjectPermission
+from apps.accounts.models import ObjectPermission, RecordPermission
 from apps.config_registry.services import create_draft_from_current, publish_draft
 from apps.records.models import Record
 
@@ -499,3 +499,95 @@ def test_export_routes_return_visible_records_audit_and_project_status_workbooks
     assert project_response.status_code == 200
     project_rows = list(load_workbook(BytesIO(project_response.content)).active.iter_rows(values_only=True))
     assert project_rows[1][:5] == ("PRJ-000001", "Status Project", "active", 1, 1)
+
+
+@pytest.mark.django_db
+def test_record_export_respects_record_level_denies_for_object_viewer(
+    client,
+    active_import_config,
+    user_factory,
+):
+    actor = user_factory("export-deny-viewer", "Export Product Viewer")
+    ObjectPermission.objects.create(
+        role_name="Export Product Viewer",
+        object_type_key="product",
+        can_view=True,
+    )
+    visible = Record.objects.create(
+        object_type_key="product",
+        code="PROD-000020",
+        title="Visible Export Film",
+        schema_version=active_import_config.version,
+        data={"commercial_name": "Visible Export Film", "category": "film"},
+    )
+    hidden = Record.objects.create(
+        object_type_key="product",
+        code="PROD-000021",
+        title="Hidden Export Film",
+        schema_version=active_import_config.version,
+        data={"commercial_name": "Hidden Export Film", "category": "film"},
+    )
+    RecordPermission.objects.create(
+        role_name="Export Product Viewer",
+        object_type_key="product",
+        record=hidden,
+        can_view=False,
+    )
+    client.force_login(actor)
+
+    response = client.get("/api/exports/records/product.xlsx")
+
+    assert response.status_code == 200
+    rows = list(load_workbook(BytesIO(response.content)).active.iter_rows(values_only=True))
+    assert [row[0] for row in rows[1:]] == [visible.code]
+
+
+@pytest.mark.django_db
+def test_project_status_export_respects_record_level_project_permissions(
+    client,
+    active_import_config,
+    user_factory,
+):
+    from apps.projects.models import Project, ProjectTask
+
+    actor = user_factory("scoped-project-exporter", "Scoped Project Viewer")
+    allowed_record = Record.objects.create(
+        object_type_key="project",
+        code="PRJ-000010",
+        title="Visible Project",
+        schema_version=1,
+        data={"project_name": "Visible Project"},
+    )
+    denied_record = Record.objects.create(
+        object_type_key="project",
+        code="PRJ-000011",
+        title="Hidden Project",
+        schema_version=1,
+        data={"project_name": "Hidden Project"},
+    )
+    allowed_project = Project.objects.create(
+        record=allowed_record,
+        name="Visible Project",
+        status="active",
+    )
+    denied_project = Project.objects.create(
+        record=denied_record,
+        name="Hidden Project",
+        status="active",
+    )
+    ProjectTask.objects.create(project=allowed_project, title="Visible task", state="in_progress")
+    ProjectTask.objects.create(project=denied_project, title="Hidden task", state="in_progress")
+    RecordPermission.objects.create(
+        role_name="Scoped Project Viewer",
+        object_type_key="project",
+        record=allowed_record,
+        can_view=True,
+    )
+    client.force_login(actor)
+
+    response = client.get("/api/exports/project-status.xlsx")
+
+    assert response.status_code == 200
+    rows = list(load_workbook(BytesIO(response.content)).active.iter_rows(values_only=True))
+    assert rows[1][:5] == ("PRJ-000010", "Visible Project", "active", 1, 1)
+    assert all(row[0] != "PRJ-000011" for row in rows[1:])

@@ -60,6 +60,7 @@ APP_HOST = os.environ.get("APP_HOST", "plastic-hub.local")
 ALLOWED_HOSTS = unique_list(env_list("ALLOWED_HOSTS", "localhost,127.0.0.1,backend") + [APP_HOST])
 
 INSTALLED_APPS = [
+    "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
@@ -99,6 +100,21 @@ MIDDLEWARE = [
 ROOT_URLCONF = "plastic_hub.urls"
 WSGI_APPLICATION = "plastic_hub.wsgi.application"
 
+TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
+            ],
+        },
+    }
+]
+
 DATABASE_URL = os.environ.get("DATABASE_URL")
 if DATABASE_URL:
     DATABASES = {"default": database_from_url(DATABASE_URL)}
@@ -123,6 +139,11 @@ REST_FRAMEWORK = {
 }
 
 CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", "http://localhost:5173")
+CORS_ALLOW_CREDENTIALS = True
+CSRF_TRUSTED_ORIGINS = env_list(
+    "CSRF_TRUSTED_ORIGINS",
+    f"http://localhost:5173,http://{APP_HOST},https://{APP_HOST}",
+)
 
 MEILI_URL = os.environ.get("MEILI_URL", "")
 MEILI_MASTER_KEY = os.environ.get("MEILI_MASTER_KEY", "")
@@ -141,5 +162,9 @@ CELERY_BEAT_SCHEDULE = {
     "nightly-backup-at-0200": {
         "task": "apps.backups.tasks.create_scheduled_backup",
         "schedule": crontab(hour=2, minute=0),
+    },
+    "scan-managed-folders-every-15-minutes": {
+        "task": "apps.folders.tasks.scan_managed_folders",
+        "schedule": crontab(minute="*/15"),
     }
 }

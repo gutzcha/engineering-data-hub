@@ -162,7 +162,7 @@ def test_document_revision_payload_contains_required_fields_and_extracted_text()
 @pytest.mark.django_db
 def test_index_tasks_use_injected_client_without_live_meilisearch(monkeypatch):
     from apps.search import tasks
-    from apps.search.indexers import DOCUMENTS_INDEX, RECORDS_INDEX
+    from apps.search.indexers import DOCUMENTS_INDEX, FOLDER_EVENTS_INDEX, RECORDS_INDEX
 
     calls = []
 
@@ -194,17 +194,26 @@ def test_index_tasks_use_injected_client_without_live_meilisearch(monkeypatch):
         sha256="b" * 64,
         extracted_text="indexed text",
     )
+    folder_event = FolderChangeEvent.objects.create(
+        event_type=FolderChangeEvent.EventType.ADDED,
+        path="Products/PROD-000001/spec.txt",
+        matched_record=record,
+    )
 
     tasks.index_record(record.pk)
     tasks.index_document_revision(revision.pk)
+    tasks.index_folder_event(folder_event.pk)
     tasks.index_record("00000000-0000-0000-0000-000000000000")
     tasks.index_document_revision(999999)
+    tasks.index_folder_event(999999)
 
     assert calls[0][0] == RECORDS_INDEX
     assert calls[0][1][0]["id"] == str(record.pk)
     assert calls[1][0] == DOCUMENTS_INDEX
     assert calls[1][1][0]["id"] == str(revision.pk)
-    assert len(calls) == 2
+    assert calls[2][0] == FOLDER_EVENTS_INDEX
+    assert calls[2][1][0]["id"] == str(folder_event.pk)
+    assert len(calls) == 3
 
 
 def test_disabled_client_noops_when_meili_url_is_blank(settings):
@@ -218,6 +227,44 @@ def test_disabled_client_noops_when_meili_url_is_blank(settings):
     assert client.add_documents("records", [{"id": "1"}]) is None
     assert client.delete_all_documents("records") is None
     assert client.search("records", "film") == {"hits": []}
+
+
+@pytest.mark.django_db
+def test_enqueue_helpers_run_index_tasks_after_commit(
+    monkeypatch,
+    django_capture_on_commit_callbacks,
+):
+    from apps.search import tasks
+
+    calls = []
+    monkeypatch.setattr(tasks.index_record, "delay", lambda record_id: calls.append(("record", record_id)))
+    monkeypatch.setattr(
+        tasks.index_document_revision,
+        "delay",
+        lambda revision_id: calls.append(("document", revision_id)),
+    )
+    monkeypatch.setattr(
+        tasks.index_folder_event,
+        "delay",
+        lambda event_id: calls.append(("folder_event", event_id)),
+    )
+
+    with django_capture_on_commit_callbacks(execute=True):
+        tasks.enqueue_record_index("record-1")
+        tasks.enqueue_record_indexes(["record-2", "record-3"])
+        tasks.enqueue_document_revision_index(42)
+        tasks.enqueue_folder_event_index(43)
+        tasks.enqueue_folder_event_indexes([44, 45])
+
+    assert calls == [
+        ("record", "record-1"),
+        ("record", "record-2"),
+        ("record", "record-3"),
+        ("document", 42),
+        ("folder_event", 43),
+        ("folder_event", 44),
+        ("folder_event", 45),
+    ]
 
 
 def test_client_returns_empty_search_for_malformed_meili_response(settings, monkeypatch):

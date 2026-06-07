@@ -25,6 +25,7 @@ from apps.documents.storage import (
 )
 from apps.folders.models import ManagedFolder
 from apps.records.models import Record
+from apps.search.tasks import enqueue_document_revision_index
 
 
 PREVIEW_TEXT_CHARS = 20_000
@@ -142,6 +143,7 @@ class DocumentViewSet(viewsets.ViewSet):
                 revision.state = DocumentRevision.State.RELEASED
                 revision.released_at = timezone.now()
                 revision.save(update_fields=["state", "released_at", "updated_at"])
+                enqueue_document_revision_index(revision.pk)
                 _record_event(document, revision, "revision_released", request.user)
             document.current_revision = revision
             document.state = Document.State.RELEASED
@@ -211,11 +213,7 @@ class DocumentViewSet(viewsets.ViewSet):
 
     def _lock_document(self, pk):
         return get_object_or_404(
-            Document.objects.select_for_update().select_related(
-                "owner_record",
-                "current_revision",
-                "folder",
-            ),
+            Document.objects.select_for_update().select_related("owner_record"),
             pk=pk,
         )
 
@@ -312,6 +310,7 @@ def _create_or_replace_revision(document, revision_label: str, uploaded_file, ac
             actor,
             {"before": before, "after": _revision_snapshot(revision)},
         )
+        enqueue_document_revision_index(revision.pk)
     except Exception:
         discard_finalized_revision_file(file_data)
         raise

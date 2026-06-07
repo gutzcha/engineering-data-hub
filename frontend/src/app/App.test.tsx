@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
 
@@ -16,7 +16,16 @@ const dockerfile = readFileSync(
 const styles = readFileSync(resolve(process.cwd(), "src/styles.css"), "utf8");
 
 describe("App shell", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("renders route-aware navigation for the operational sections", () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ detail: "Authentication required" }), { status: 403 }))
+    );
+
     render(<App />);
 
     const navigation = screen.getByRole("navigation", {

@@ -316,6 +316,42 @@ def test_create_and_delete_relationship_require_edit_permission_on_source(
 
 
 @pytest.mark.django_db
+def test_relationship_create_and_delete_enqueue_related_record_indexing(
+    client,
+    user_factory,
+    active_config,
+    relationship_permissions,
+    graph_records,
+    monkeypatch,
+    django_capture_on_commit_callbacks,
+):
+    from apps.search import tasks
+
+    indexed_record_ids = []
+    monkeypatch.setattr(tasks.index_record, "delay", lambda record_id: indexed_record_ids.append(record_id))
+    client.force_login(user_factory("relationship-index-engineer", "Graph Engineer"))
+
+    with django_capture_on_commit_callbacks(execute=True):
+        created = _create_relationship(
+            client,
+            graph_records["product"],
+            graph_records["material"],
+            "product_uses_material",
+        )
+        assert created.status_code == 201
+        deleted = client.delete(f"/api/relationships/{created.json()['id']}/")
+        assert deleted.status_code == 204
+
+    expected = [
+        str(graph_records["product"].pk),
+        str(graph_records["material"].pk),
+        str(graph_records["product"].pk),
+        str(graph_records["material"].pk),
+    ]
+    assert indexed_record_ids == expected
+
+
+@pytest.mark.django_db
 def test_graph_requires_view_permission_on_root_record(
     client,
     user_factory,

@@ -3,6 +3,9 @@ import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
   plugins: [react()],
+  server: {
+    allowedHosts: ["plastic-hub.local"]
+  },
   test: {
     environment: "jsdom",
     exclude: [...configDefaults.exclude, "e2e/**"],

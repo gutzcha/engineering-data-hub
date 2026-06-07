@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.utils import timezone
 
-from apps.accounts.models import ObjectPermission
+from apps.accounts.models import ObjectPermission, RecordPermission
 from apps.audit.models import AuditEvent
 from apps.documents.models import Document
 from apps.projects.models import Project, ProjectTask
@@ -516,6 +516,51 @@ def test_dashboard_record_widgets_are_permission_filtered(client, user_factory, 
         }
     ]
     assert [item["action"] for item in widgets["Recent changes"]["items"]] == ["record.updated"]
+
+
+@pytest.mark.django_db
+def test_missing_documents_widget_allows_record_scoped_viewer(client, user_factory):
+    try:
+        from apps.reports.models import Dashboard, DashboardWidget
+    except ModuleNotFoundError:
+        pytest.fail("reports models are missing")
+
+    viewer = user_factory("scoped-missing-docs-viewer", "Scoped Missing Docs Viewer")
+    visible_product = create_record(
+        "PROD-SCOPED-DOC",
+        "product",
+        "Scoped Missing Docs Product",
+    )
+    create_record("PROD-HIDDEN-DOC", "product", "Hidden Missing Docs Product")
+    RecordPermission.objects.create(
+        role_name="Scoped Missing Docs Viewer",
+        object_type_key="product",
+        record=visible_product,
+        can_view=True,
+    )
+    dashboard = Dashboard.objects.create(name="Scoped Docs")
+    DashboardWidget.objects.create(
+        dashboard=dashboard,
+        title="Missing docs",
+        widget_type="missing_required_documents",
+        config={"requirements": [{"object_type_key": "product", "document_types": ["sds"]}]},
+        sort_order=1,
+    )
+    client.force_login(viewer)
+
+    response = client.get(f"/api/dashboards/{dashboard.pk}/")
+
+    assert response.status_code == 200
+    widget = response.json()["widgets"][0]
+    assert widget["data"]["items"] == [
+        {
+            "record_id": str(visible_product.pk),
+            "code": "PROD-SCOPED-DOC",
+            "title": "Scoped Missing Docs Product",
+            "object_type_key": "product",
+            "missing_document_types": ["sds"],
+        }
+    ]
 
 
 @pytest.mark.django_db

@@ -7,7 +7,7 @@ import re
 from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
 
-from apps.accounts.permissions import user_can
+from apps.accounts.permissions import records_user_can_view, user_can, user_has_view_scope
 from apps.audit.models import AuditEvent
 from apps.audit.views import _visible_events
 from apps.documents.models import Document
@@ -112,14 +112,7 @@ def apply_record_filters(queryset, filters, user):
 def visible_records(user, queryset, *, limit=DEFAULT_RESULT_LIMIT, filters=None):
     if not user or not getattr(user, "is_authenticated", False) or not user.is_active:
         return []
-    visible_keys = [
-        key
-        for key in queryset.values_list("object_type_key", flat=True).distinct()
-        if user_can(user, "view", key)
-    ]
-    if not visible_keys:
-        return []
-    capped_queryset = queryset.filter(object_type_key__in=visible_keys)[: _scan_limit(limit, filters)]
+    capped_queryset = records_user_can_view(user, queryset)[: _scan_limit(limit, filters)]
     records = []
     for record in capped_queryset:
         if user_can(user, "view", record.object_type_key, record_id=str(record.pk)) and _record_matches_python_filters(
@@ -295,9 +288,12 @@ def _missing_required_documents(user, config):
     for requirement in requirements:
         object_type_key = requirement["object_type_key"]
         document_types = requirement["document_types"]
-        if not user_can(user, "view", object_type_key):
+        if not user_has_view_scope(user, object_type_key):
             continue
-        queryset = Record.objects.filter(object_type_key=object_type_key).order_by("code", "id")
+        queryset = records_user_can_view(
+            user,
+            Record.objects.filter(object_type_key=object_type_key).order_by("code", "id"),
+        )
         for record in queryset[: _scan_limit(limit)]:
             if not user_can(user, "view", record.object_type_key, record_id=str(record.pk)):
                 continue

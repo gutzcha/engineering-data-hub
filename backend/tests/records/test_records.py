@@ -2,7 +2,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 
-from apps.accounts.models import ObjectPermission
+from apps.accounts.models import ObjectPermission, RecordPermission
 from apps.config_registry.services import create_draft_from_current, publish_draft
 from apps.documents.models import Document, DocumentRevision
 from apps.records.models import Record
@@ -475,6 +475,82 @@ def test_retrieve_requires_view_permission(client, user_factory, active_config, 
 
 
 @pytest.mark.django_db
+def test_record_list_includes_only_record_scoped_grants(
+    client,
+    user_factory,
+    active_config,
+):
+    scoped_user = user_factory("record-list-scoped", "Scoped Record Viewer")
+    allowed = Record.objects.create(
+        object_type_key="product",
+        code="PROD-900101",
+        title="Visible Scoped Product",
+        schema_version=active_config.version,
+        data={"commercial_name": "Visible Scoped Product", "markets": ["medical"]},
+    )
+    denied = Record.objects.create(
+        object_type_key="product",
+        code="PROD-900102",
+        title="Hidden Scoped Product",
+        schema_version=active_config.version,
+        data={"commercial_name": "Hidden Scoped Product", "markets": ["medical"]},
+    )
+    RecordPermission.objects.create(
+        role_name="Scoped Record Viewer",
+        object_type_key="product",
+        record=allowed,
+        can_view=True,
+    )
+    client.force_login(scoped_user)
+
+    response = client.get("/api/records/?object_type_key=product")
+
+    assert response.status_code == 200
+    assert [record["id"] for record in response.json()] == [str(allowed.pk)]
+    assert str(denied.pk) not in {record["id"] for record in response.json()}
+
+
+@pytest.mark.django_db
+def test_record_list_respects_record_level_denies_for_object_viewer(
+    client,
+    user_factory,
+    active_config,
+):
+    viewer = user_factory("record-list-deny-viewer", "Deny Product Viewer")
+    ObjectPermission.objects.create(
+        role_name="Deny Product Viewer",
+        object_type_key="product",
+        can_view=True,
+    )
+    visible = Record.objects.create(
+        object_type_key="product",
+        code="PROD-900201",
+        title="Globally Visible Product",
+        schema_version=active_config.version,
+        data={"commercial_name": "Globally Visible Product", "markets": ["medical"]},
+    )
+    blocked = Record.objects.create(
+        object_type_key="product",
+        code="PROD-900202",
+        title="Blocked Product",
+        schema_version=active_config.version,
+        data={"commercial_name": "Blocked Product", "markets": ["medical"]},
+    )
+    RecordPermission.objects.create(
+        role_name="Deny Product Viewer",
+        object_type_key="product",
+        record=blocked,
+        can_view=False,
+    )
+    client.force_login(viewer)
+
+    response = client.get("/api/records/?object_type_key=product")
+
+    assert response.status_code == 200
+    assert [record["id"] for record in response.json()] == [str(visible.pk)]
+
+
+@pytest.mark.django_db
 def test_delete_record_route_is_not_supported_for_viewer(
     client,
     user_factory,
@@ -519,6 +595,59 @@ def test_release_endpoint_sets_status_released_when_authorized(
 
     assert response.status_code == 200
     assert response.json()["status"] == "released"
+
+
+@pytest.mark.django_db
+def test_record_create_update_and_release_enqueue_search_indexing(
+    client,
+    user_factory,
+    active_config,
+    permissions,
+    monkeypatch,
+    django_capture_on_commit_callbacks,
+):
+    from apps.search import tasks
+
+    indexed_record_ids = []
+    monkeypatch.setattr(tasks.index_record, "delay", lambda record_id: indexed_record_ids.append(record_id))
+    client.force_login(user_factory("search-indexing-engineer", "Engineer"))
+
+    with django_capture_on_commit_callbacks(execute=True):
+        create_response = post_json(
+            client,
+            "/api/records/",
+            {
+                "object_type_key": "product",
+                "data": {
+                    "commercial_name": "Indexed Film",
+                    "markets": ["medical"],
+                },
+            },
+        )
+        assert create_response.status_code == 201
+        record_id = create_response.json()["id"]
+
+        update_response = patch_json(
+            client,
+            f"/api/records/{record_id}/",
+            {"data": {"commercial_name": "Indexed Film Updated"}},
+        )
+        assert update_response.status_code == 200
+
+        ObjectPermission.objects.update_or_create(
+            role_name="Engineer",
+            object_type_key="product",
+            defaults={
+                "can_view": True,
+                "can_create": True,
+                "can_edit": True,
+                "can_release": True,
+            },
+        )
+        release_response = post_json(client, f"/api/records/{record_id}/release/", {})
+        assert release_response.status_code == 200
+
+    assert indexed_record_ids == [record_id, record_id, record_id]
 
 
 @pytest.mark.django_db

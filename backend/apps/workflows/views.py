@@ -65,10 +65,7 @@ class WorkflowTaskCompleteView(APIView):
     def post(self, request, pk):
         with transaction.atomic():
             task = get_object_or_404(
-                WorkflowTask.objects.select_for_update().select_related(
-                    "related_record",
-                    "instance__record",
-                ),
+                WorkflowTask.objects.select_for_update().select_related("instance__record"),
                 pk=pk,
             )
             record = task.related_record or task.instance.record

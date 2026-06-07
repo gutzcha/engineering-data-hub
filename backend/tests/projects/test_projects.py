@@ -3,7 +3,7 @@ from django.core.exceptions import ValidationError
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 
-from apps.accounts.models import ObjectPermission
+from apps.accounts.models import ObjectPermission, RecordPermission
 from apps.config_registry.seed import starter_configuration_data
 from apps.config_registry.services import create_draft_from_current, publish_draft
 from apps.records.models import Record
@@ -94,6 +94,26 @@ def test_create_project_creates_generic_project_record(
     assert project.record.schema_version == active_project_config.version
     assert project.record.created_by == actor
     assert Record.objects.filter(pk=project.record_id, object_type_key="project").exists()
+
+
+@pytest.mark.django_db
+def test_create_project_enqueues_record_search_indexing(
+    user_factory,
+    active_project_config,
+    project_permissions,
+    monkeypatch,
+    django_capture_on_commit_callbacks,
+):
+    from apps.search import tasks
+
+    actor = user_factory("project-index-creator", "Project Manager")
+    indexed_record_ids = []
+    monkeypatch.setattr(tasks.index_record, "delay", lambda record_id: indexed_record_ids.append(record_id))
+
+    with django_capture_on_commit_callbacks(execute=True):
+        project = create_project("Indexed Project", actor)
+
+    assert indexed_record_ids == [str(project.record_id)]
 
 
 @pytest.mark.django_db
@@ -294,3 +314,97 @@ def test_timeline_excludes_cross_project_dependency_rows_created_outside_model_s
 
     assert response.status_code == 200
     assert response.json()["dependencies"] == []
+
+
+@pytest.mark.django_db
+def test_project_workload_respects_record_level_project_visibility(
+    client,
+    user_factory,
+    active_project_config,
+    project_permissions,
+):
+    _ProjectBoardColumn, _ProjectEvent, ProjectTask = project_models()
+    manager = user_factory("workload-manager", "Project Manager")
+    assignee = user_factory("workload-assignee")
+    visible_project = create_project("Visible Workload Project", manager)
+    hidden_project = create_project("Hidden Workload Project", manager)
+    ProjectTask.objects.create(
+        project=visible_project,
+        title="Visible workload task",
+        state=ProjectTask.State.IN_PROGRESS,
+        assignee_user=assignee,
+        estimated_hours=3,
+    )
+    ProjectTask.objects.create(
+        project=hidden_project,
+        title="Hidden workload task",
+        state=ProjectTask.State.IN_PROGRESS,
+        assignee_user=assignee,
+        estimated_hours=5,
+    )
+    RecordPermission.objects.create(
+        role_name="Project Viewer",
+        object_type_key="project",
+        record=hidden_project.record,
+        can_view=False,
+    )
+    client.force_login(user_factory("workload-viewer", "Project Viewer"))
+
+    response = client.get("/api/projects/workload/")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "assignee_user": assignee.pk,
+            "username": assignee.username,
+            "open_tasks": 1,
+            "estimated_hours": 3.0,
+        }
+    ]
+
+
+@pytest.mark.django_db
+def test_project_workload_allows_record_scoped_project_viewer(
+    client,
+    user_factory,
+    active_project_config,
+    project_permissions,
+):
+    _ProjectBoardColumn, _ProjectEvent, ProjectTask = project_models()
+    manager = user_factory("scoped-workload-manager", "Project Manager")
+    assignee = user_factory("scoped-workload-assignee")
+    visible_project = create_project("Scoped Visible Workload Project", manager)
+    hidden_project = create_project("Scoped Hidden Workload Project", manager)
+    ProjectTask.objects.create(
+        project=visible_project,
+        title="Visible scoped workload task",
+        state=ProjectTask.State.IN_PROGRESS,
+        assignee_user=assignee,
+        estimated_hours=4,
+    )
+    ProjectTask.objects.create(
+        project=hidden_project,
+        title="Hidden scoped workload task",
+        state=ProjectTask.State.IN_PROGRESS,
+        assignee_user=assignee,
+        estimated_hours=7,
+    )
+    RecordPermission.objects.create(
+        role_name="Scoped Project Workload Viewer",
+        object_type_key="project",
+        record=visible_project.record,
+        can_view=True,
+    )
+    client.force_login(user_factory("scoped-workload-viewer", "Scoped Project Workload Viewer"))
+
+    response = client.get("/api/projects/workload/")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "assignee_user": assignee.pk,
+            "username": assignee.username,
+            "open_tasks": 1,
+            "estimated_hours": 4.0,
+        }
+    ]

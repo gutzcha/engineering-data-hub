@@ -1,14 +1,38 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { LogIn, LogOut } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import type { ReactNode } from "react";
 
 import type { NavigationItem } from "../app/routes";
+import { apiGet, apiPost } from "../lib/api";
 
 type AppLayoutProps = {
   navigationItems: NavigationItem[];
   children: ReactNode;
 };
 
+type CurrentUser = {
+  username: string;
+  roles: string[];
+};
+
 export function AppLayout({ navigationItems, children }: AppLayoutProps) {
+  const queryClient = useQueryClient();
+  const currentUser = useQuery({
+    queryKey: ["current-user"],
+    queryFn: () => apiGet<CurrentUser>("/accounts/me/"),
+    retry: false
+  });
+  const logout = useMutation({
+    mutationFn: async () => {
+      await apiGet<{ csrfToken: string }>("/accounts/csrf/");
+      await apiPost<void>("/accounts/logout/", {});
+    },
+    onSettled: () => {
+      queryClient.removeQueries({ queryKey: ["current-user"] });
+    }
+  });
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -49,9 +73,30 @@ export function AppLayout({ navigationItems, children }: AppLayoutProps) {
             <span className="eyebrow">Workspace</span>
             <strong>Engineering Operations</strong>
           </div>
-          <div className="topbar-meta" aria-label="Environment status">
-            <span>Dev</span>
-            <span>API: /api</span>
+          <div className="topbar-actions">
+            <div className="topbar-meta" aria-label="Environment status">
+              <span>Dev</span>
+              <span>API: /api</span>
+            </div>
+            {currentUser.isSuccess ? (
+              <div className="topbar-user" aria-label="Current user">
+                <span>{currentUser.data.username}</span>
+                <button
+                  className="topbar-auth-button"
+                  type="button"
+                  onClick={() => logout.mutate()}
+                  disabled={logout.isPending}
+                >
+                  <LogOut aria-hidden="true" size={15} />
+                  Sign out
+                </button>
+              </div>
+            ) : (
+              <NavLink className="topbar-auth-link" to="/login">
+                <LogIn aria-hidden="true" size={15} />
+                Sign in
+              </NavLink>
+            )}
           </div>
         </header>
         <main className="content">{children}</main>

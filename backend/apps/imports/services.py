@@ -6,7 +6,7 @@ from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
-from apps.accounts.permissions import user_can
+from apps.accounts.permissions import records_user_can_view, user_can, user_has_view_scope
 from apps.audit.services import record_audit_event, snapshot_model
 from apps.folders.models import FolderChangeEvent, ManagedFolder
 from apps.folders.services import generate_managed_folder, managed_root, validate_relative_path
@@ -16,6 +16,7 @@ from apps.imports.parsers import XlsxParseError, parse_xlsx_rows
 from apps.records.models import Record
 from apps.records.serializers import RecordSerializer
 from apps.records.validation import get_object_type_definition, validate_record_data
+from apps.search.tasks import enqueue_folder_event_index, enqueue_record_index
 
 
 def dry_run_import(job, *, actor=None):
@@ -121,6 +122,7 @@ def apply_import(job, *, actor, create_managed_folders=False, request=None):
         action = operation["action"]
         row_number = operation["row_number"]
         record = serializer.save()
+        enqueue_record_index(record.pk)
         ImportAuditEvent.objects.create(
             job=job,
             record=record,
@@ -235,7 +237,7 @@ def accept_folder_links(*, legacy_root_path, object_type_key, links, actor, requ
                 "state": ManagedFolder.State.ACTIVE,
             },
         )
-        FolderChangeEvent.objects.create(
+        event = FolderChangeEvent.objects.create(
             event_type=FolderChangeEvent.EventType.LINK_REQUESTED,
             path=relative_to_managed,
             matched_record=record,
@@ -243,6 +245,7 @@ def accept_folder_links(*, legacy_root_path, object_type_key, links, actor, requ
             review_status=FolderChangeEvent.ReviewStatus.LINKED,
             reviewer=actor if actor and actor.is_authenticated else None,
         )
+        enqueue_folder_event_index(event.pk)
         record_audit_event(
             actor,
             "folder.linked",
@@ -416,9 +419,10 @@ def _matching_records(folder, relative_path, records, matching_rule):
 
 def visible_records_for_export(user, object_type_key):
     get_object_type_definition(object_type_key)
-    if not user_can(user, "view", object_type_key):
+    records = Record.objects.filter(object_type_key=object_type_key).order_by("code")
+    if not user_has_view_scope(user, object_type_key):
         raise PermissionDenied("You do not have permission to view this object type.")
-    return Record.objects.filter(object_type_key=object_type_key).order_by("code")
+    return records_user_can_view(user, records)
 
 
 def export_timestamp():
