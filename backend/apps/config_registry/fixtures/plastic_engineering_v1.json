@@ -1,0 +1,846 @@
+{
+  "object_types": [
+    {
+      "key": "product",
+      "label": "Product",
+      "plural_label": "Products",
+      "code_pattern": "PROD-{seq:000000}",
+      "title_field": "commercial_name",
+      "folder_template_key": "product_standard",
+      "default_workflow_key": "engineering_record_release",
+      "is_system": true,
+      "fields": [
+        {
+          "key": "commercial_name",
+          "label": "Commercial Name",
+          "type": "text",
+          "required": true,
+          "searchable": true,
+          "unique": true
+        },
+        {
+          "key": "internal_grade",
+          "label": "Internal Grade",
+          "type": "text",
+          "required": true,
+          "searchable": true
+        },
+        {
+          "key": "resin_family",
+          "label": "Resin Family",
+          "type": "choice",
+          "required": true,
+          "searchable": true,
+          "options": ["PP", "PE", "HDPE", "LDPE", "LLDPE", "PET", "PVC", "PS", "ABS", "PA", "PC", "POM", "Other"]
+        },
+        {
+          "key": "application",
+          "label": "Application",
+          "type": "text",
+          "required": false,
+          "searchable": true
+        },
+        {
+          "key": "color",
+          "label": "Color",
+          "type": "text",
+          "required": false,
+          "searchable": true
+        },
+        {
+          "key": "regulatory_notes",
+          "label": "Regulatory Notes",
+          "type": "long_text",
+          "required": false
+        },
+        {
+          "key": "status_notes",
+          "label": "Status Notes",
+          "type": "long_text",
+          "required": false
+        }
+      ]
+    },
+    {
+      "key": "raw_material",
+      "label": "Raw Material",
+      "plural_label": "Raw Materials",
+      "code_pattern": "RM-{seq:000000}",
+      "title_field": "supplier_material_code",
+      "folder_template_key": "raw_material_standard",
+      "default_workflow_key": "raw_material_approval",
+      "is_system": true,
+      "fields": [
+        {
+          "key": "supplier_material_code",
+          "label": "Supplier Material Code",
+          "type": "text",
+          "required": true,
+          "searchable": true,
+          "unique": true
+        },
+        {
+          "key": "material_family",
+          "label": "Material Family",
+          "type": "choice",
+          "required": true,
+          "searchable": true,
+          "options": ["Base Resin", "Additive", "Colorant", "Masterbatch", "Filler", "Regrind", "Packaging", "Other"]
+        },
+        {
+          "key": "supplier",
+          "label": "Supplier",
+          "type": "record_ref",
+          "required": true,
+          "reference_target_type": "supplier"
+        },
+        {
+          "key": "melt_flow_index",
+          "label": "Melt Flow Index",
+          "type": "number",
+          "required": false,
+          "unit": "g/10 min"
+        },
+        {
+          "key": "density",
+          "label": "Density",
+          "type": "number",
+          "required": false,
+          "unit": "g/cm3"
+        },
+        {
+          "key": "color",
+          "label": "Color",
+          "type": "text",
+          "required": false,
+          "searchable": true
+        },
+        {
+          "key": "technical_data_sheet",
+          "label": "Technical Data Sheet",
+          "type": "file_ref",
+          "required": false
+        },
+        {
+          "key": "compliance_documents",
+          "label": "Compliance Documents",
+          "type": "file_ref",
+          "required": false,
+          "multiple": true
+        }
+      ]
+    },
+    {
+      "key": "product_spec",
+      "label": "Product Spec",
+      "plural_label": "Product Specs",
+      "code_pattern": "SPEC-{seq:000000}",
+      "title_field": "spec_number",
+      "folder_template_key": "product_spec_standard",
+      "default_workflow_key": "product_spec_release",
+      "is_system": true,
+      "fields": [
+        {
+          "key": "spec_number",
+          "label": "Spec Number",
+          "type": "text",
+          "required": true,
+          "searchable": true,
+          "unique": true
+        },
+        {
+          "key": "product",
+          "label": "Product",
+          "type": "record_ref",
+          "required": true,
+          "reference_target_type": "product"
+        },
+        {
+          "key": "revision",
+          "label": "Revision",
+          "type": "text",
+          "required": true,
+          "searchable": true
+        },
+        {
+          "key": "effective_date",
+          "label": "Effective Date",
+          "type": "date",
+          "required": false
+        },
+        {
+          "key": "controlled_document",
+          "label": "Controlled Document",
+          "type": "file_ref",
+          "required": false
+        },
+        {
+          "key": "release_notes",
+          "label": "Release Notes",
+          "type": "long_text",
+          "required": false
+        }
+      ]
+    },
+    {
+      "key": "supplier",
+      "label": "Supplier",
+      "plural_label": "Suppliers",
+      "code_pattern": "SUP-{seq:000000}",
+      "title_field": "supplier_name",
+      "folder_template_key": "supplier_standard",
+      "is_system": true,
+      "fields": [
+        {
+          "key": "supplier_name",
+          "label": "Supplier Name",
+          "type": "text",
+          "required": true,
+          "searchable": true
+        },
+        {
+          "key": "supplier_code",
+          "label": "Supplier Code",
+          "type": "text",
+          "required": true,
+          "searchable": true,
+          "unique": true
+        },
+        {
+          "key": "contact_email",
+          "label": "Contact Email",
+          "type": "text",
+          "required": false
+        },
+        {
+          "key": "approved_status",
+          "label": "Approved Status",
+          "type": "choice",
+          "required": true,
+          "options": ["Pending Review", "Approved", "Conditional", "Disqualified"]
+        }
+      ]
+    },
+    {
+      "key": "customer",
+      "label": "Customer",
+      "plural_label": "Customers",
+      "code_pattern": "CUS-{seq:000000}",
+      "title_field": "customer_name",
+      "is_system": true,
+      "fields": [
+        {
+          "key": "customer_name",
+          "label": "Customer Name",
+          "type": "text",
+          "required": true,
+          "searchable": true
+        },
+        {
+          "key": "customer_code",
+          "label": "Customer Code",
+          "type": "text",
+          "required": true,
+          "searchable": true,
+          "unique": true
+        },
+        {
+          "key": "market_segment",
+          "label": "Market Segment",
+          "type": "choice",
+          "required": false,
+          "options": ["Packaging", "Medical", "Automotive", "Consumer Goods", "Industrial", "Electrical", "Other"]
+        }
+      ]
+    },
+    {
+      "key": "project",
+      "label": "Project",
+      "plural_label": "Projects",
+      "code_pattern": "PRJ-{seq:000000}",
+      "title_field": "project_name",
+      "folder_template_key": "project_standard",
+      "default_workflow_key": "project_gate_review",
+      "is_system": true,
+      "fields": [
+        {
+          "key": "project_name",
+          "label": "Project Name",
+          "type": "text",
+          "required": true,
+          "searchable": true
+        },
+        {
+          "key": "project_type",
+          "label": "Project Type",
+          "type": "choice",
+          "required": true,
+          "options": ["New Product", "Material Change", "Cost Down", "Quality Improvement", "Customer Request", "Regulatory"]
+        },
+        {
+          "key": "target_launch_date",
+          "label": "Target Launch Date",
+          "type": "date",
+          "required": false
+        },
+        {
+          "key": "project_owner",
+          "label": "Project Owner",
+          "type": "user_ref",
+          "required": false
+        },
+        {
+          "key": "linked_product",
+          "label": "Linked Product",
+          "type": "record_ref",
+          "required": false,
+          "reference_target_type": "product"
+        }
+      ]
+    },
+    {
+      "key": "test_method",
+      "label": "Test Method",
+      "plural_label": "Test Methods",
+      "code_pattern": "TM-{seq:000000}",
+      "title_field": "method_name",
+      "folder_template_key": "test_method_standard",
+      "default_workflow_key": "engineering_record_release",
+      "is_system": true,
+      "fields": [
+        {
+          "key": "method_name",
+          "label": "Method Name",
+          "type": "text",
+          "required": true,
+          "searchable": true
+        },
+        {
+          "key": "method_number",
+          "label": "Method Number",
+          "type": "text",
+          "required": false,
+          "searchable": true,
+          "unique": true
+        },
+        {
+          "key": "controlled_document",
+          "label": "Controlled Document",
+          "type": "file_ref",
+          "required": false
+        },
+        {
+          "key": "method_scope",
+          "label": "Method Scope",
+          "type": "long_text",
+          "required": false
+        }
+      ]
+    },
+    {
+      "key": "document",
+      "label": "Document",
+      "plural_label": "Documents",
+      "code_pattern": "DOC-{seq:000000}",
+      "title_field": "document_title",
+      "folder_template_key": "document_standard",
+      "default_workflow_key": "engineering_record_release",
+      "is_system": true,
+      "fields": [
+        {
+          "key": "document_title",
+          "label": "Document Title",
+          "type": "text",
+          "required": true,
+          "searchable": true
+        },
+        {
+          "key": "document_type",
+          "label": "Document Type",
+          "type": "choice",
+          "required": true,
+          "options": ["TDS", "SDS", "Certificate", "Specification", "Drawing", "Work Instruction", "Other"]
+        },
+        {
+          "key": "revision",
+          "label": "Revision",
+          "type": "text",
+          "required": false
+        },
+        {
+          "key": "effective_date",
+          "label": "Effective Date",
+          "type": "date",
+          "required": false
+        },
+        {
+          "key": "controlled_file",
+          "label": "Controlled File",
+          "type": "file_ref",
+          "required": false
+        }
+      ]
+    }
+  ],
+  "relationship_types": [
+    {
+      "key": "product_uses_material",
+      "label": "Product uses material",
+      "source_object_type": "product",
+      "target_object_type": "raw_material"
+    },
+    {
+      "key": "product_has_spec",
+      "label": "Product has spec",
+      "source_object_type": "product",
+      "target_object_type": "product_spec"
+    },
+    {
+      "key": "project_affects_product",
+      "label": "Project affects product",
+      "source_object_type": "project",
+      "target_object_type": "product"
+    },
+    {
+      "key": "supplier_provides_material",
+      "label": "Supplier provides material",
+      "source_object_type": "supplier",
+      "target_object_type": "raw_material"
+    },
+    {
+      "key": "customer_uses_product",
+      "label": "Customer uses product",
+      "source_object_type": "customer",
+      "target_object_type": "product"
+    },
+    {
+      "key": "document_attached_to_record",
+      "label": "Document attached to record",
+      "source_object_type": "document"
+    }
+  ],
+  "form_layouts": [
+    {
+      "key": "product_default",
+      "label": "Product Default",
+      "object_type_key": "product",
+      "sections": [
+        {
+          "label": "Identity",
+          "fields": ["commercial_name", "internal_grade", "resin_family", "application", "color"]
+        },
+        {
+          "label": "Regulatory and Status",
+          "fields": ["regulatory_notes", "status_notes"]
+        }
+      ]
+    },
+    {
+      "key": "raw_material_default",
+      "label": "Raw Material Default",
+      "object_type_key": "raw_material",
+      "sections": [
+        {
+          "label": "Supplier Material",
+          "fields": ["supplier_material_code", "material_family", "supplier", "color"]
+        },
+        {
+          "label": "Technical Data",
+          "fields": ["melt_flow_index", "density", "technical_data_sheet", "compliance_documents"]
+        }
+      ]
+    },
+    {
+      "key": "product_spec_default",
+      "label": "Product Spec Default",
+      "object_type_key": "product_spec",
+      "sections": [
+        {
+          "label": "Specification",
+          "fields": ["spec_number", "product", "revision", "effective_date"]
+        },
+        {
+          "label": "Release Package",
+          "fields": ["controlled_document", "release_notes"]
+        }
+      ]
+    },
+    {
+      "key": "supplier_default",
+      "label": "Supplier Default",
+      "object_type_key": "supplier",
+      "sections": [
+        {
+          "label": "Supplier Identity",
+          "fields": ["supplier_name", "supplier_code", "contact_email", "approved_status"]
+        }
+      ]
+    },
+    {
+      "key": "customer_default",
+      "label": "Customer Default",
+      "object_type_key": "customer",
+      "sections": [
+        {
+          "label": "Customer Identity",
+          "fields": ["customer_name", "customer_code", "market_segment"]
+        }
+      ]
+    },
+    {
+      "key": "project_default",
+      "label": "Project Default",
+      "object_type_key": "project",
+      "sections": [
+        {
+          "label": "Project",
+          "fields": ["project_name", "project_type", "target_launch_date", "project_owner", "linked_product"]
+        }
+      ]
+    }
+  ],
+  "folder_templates": [
+    {
+      "key": "product_standard",
+      "label": "Product Standard",
+      "name": "Product Standard",
+      "pattern": "Products/{code}_{title}",
+      "root": "Products",
+      "children": ["01_Specifications", "02_Drawings", "03_Materials", "04_Testing", "05_Project_Files", "99_Working"]
+    },
+    {
+      "key": "raw_material_standard",
+      "label": "Raw Material Standard",
+      "name": "Raw Material Standard",
+      "pattern": "Raw_Materials/{code}_{title}",
+      "root": "Raw_Materials",
+      "children": ["01_Supplier_Documents", "02_Technical_Data", "03_Compliance", "99_Working"]
+    },
+    {
+      "key": "project_standard",
+      "label": "Project Standard",
+      "name": "Project Standard",
+      "pattern": "Projects/{code}_{title}",
+      "root": "Projects",
+      "children": ["01_Charter", "02_Gate_Reviews", "03_Trials", "04_Customer_Inputs", "99_Working"]
+    },
+    {
+      "key": "supplier_standard",
+      "label": "Supplier Standard",
+      "name": "Supplier Standard",
+      "pattern": "Suppliers/{code}_{title}",
+      "root": "Suppliers",
+      "children": ["01_Qualification", "02_Compliance", "03_Correspondence", "99_Working"]
+    },
+    {
+      "key": "product_spec_standard",
+      "label": "Product Spec Standard",
+      "name": "Product Spec Standard",
+      "pattern": "Specifications/{code}_{title}",
+      "root": "Specifications",
+      "children": ["01_Controlled_Documents", "02_Release_Notes", "99_Working"]
+    },
+    {
+      "key": "test_method_standard",
+      "label": "Test Method Standard",
+      "name": "Test Method Standard",
+      "pattern": "Test_Methods/{code}_{title}",
+      "root": "Test_Methods",
+      "children": ["01_Method", "02_Validation", "99_Working"]
+    },
+    {
+      "key": "document_standard",
+      "label": "Document Standard",
+      "name": "Document Standard",
+      "pattern": "Documents/{code}_{title}",
+      "root": "Documents",
+      "children": ["01_Controlled_File", "02_History", "99_Working"]
+    }
+  ],
+  "workflows": [
+    {
+      "key": "engineering_record_release",
+      "label": "Engineering Record Release",
+      "name": "Engineering Record Release",
+      "states": ["draft", "engineering_review", "quality_review", "released"],
+      "transitions": [
+        {
+          "from": "draft",
+          "to": "engineering_review",
+          "guard": "required_fields_complete",
+          "task_template": "Engineering review"
+        },
+        {
+          "from": "engineering_review",
+          "to": "quality_review",
+          "guard": "engineering_approval",
+          "task_template": "Quality review"
+        },
+        {
+          "from": "quality_review",
+          "to": "released",
+          "guard": "quality_approval",
+          "task_template": "Release record"
+        }
+      ],
+      "release_rules": ["required_fields_complete", "linked_documents_reviewed", "audit_trail_retained"]
+    },
+    {
+      "key": "product_spec_release",
+      "label": "Product Spec Release",
+      "name": "Product Spec Release",
+      "states": ["draft", "technical_review", "approval", "released"],
+      "transitions": [
+        {
+          "from": "draft",
+          "to": "technical_review",
+          "guard": "spec_number_and_product_required",
+          "task_template": "Technical spec review"
+        },
+        {
+          "from": "technical_review",
+          "to": "approval",
+          "guard": "controlled_document_attached",
+          "task_template": "Approver signoff"
+        },
+        {
+          "from": "approval",
+          "to": "released",
+          "guard": "approval_complete",
+          "task_template": "Publish spec revision"
+        }
+      ],
+      "release_rules": ["controlled_document_required", "revision_required", "effective_date_confirmed"]
+    },
+    {
+      "key": "raw_material_approval",
+      "label": "Raw Material Approval",
+      "name": "Raw Material Approval",
+      "states": ["draft", "supplier_review", "technical_review", "approved"],
+      "transitions": [
+        {
+          "from": "draft",
+          "to": "supplier_review",
+          "guard": "supplier_selected",
+          "task_template": "Supplier qualification review"
+        },
+        {
+          "from": "supplier_review",
+          "to": "technical_review",
+          "guard": "compliance_documents_available",
+          "task_template": "Material technical review"
+        },
+        {
+          "from": "technical_review",
+          "to": "approved",
+          "guard": "technical_and_quality_approval",
+          "task_template": "Approve material"
+        }
+      ],
+      "release_rules": ["supplier_required", "tds_or_compliance_document_required", "material_family_required"]
+    },
+    {
+      "key": "project_gate_review",
+      "label": "Project Gate Review",
+      "name": "Project Gate Review",
+      "states": ["idea", "scoping", "development", "launch_review", "closed"],
+      "transitions": [
+        {
+          "from": "idea",
+          "to": "scoping",
+          "guard": "project_owner_assigned",
+          "task_template": "Gate 0 scoping review"
+        },
+        {
+          "from": "scoping",
+          "to": "development",
+          "guard": "scope_and_target_launch_confirmed",
+          "task_template": "Gate 1 development approval"
+        },
+        {
+          "from": "development",
+          "to": "launch_review",
+          "guard": "trial_and_spec_package_ready",
+          "task_template": "Gate 2 launch readiness"
+        },
+        {
+          "from": "launch_review",
+          "to": "closed",
+          "guard": "launch_approval_complete",
+          "task_template": "Close project"
+        }
+      ],
+      "release_rules": ["owner_required", "target_launch_date_tracked", "linked_product_reviewed_when_available"]
+    }
+  ],
+  "dashboards": [
+    {
+      "key": "engineering_overview",
+      "label": "Engineering Overview",
+      "name": "Engineering Overview",
+      "widgets": [
+        {
+          "key": "records_by_status",
+          "title": "Records by Status",
+          "type": "count_by_status",
+          "widget_type": "count_by_status",
+          "config": {
+            "filters": [
+              {
+                "type": "object_type",
+                "values": ["product", "raw_material", "product_spec", "project"]
+              }
+            ]
+          }
+        },
+        {
+          "key": "records_by_type",
+          "title": "Records by Type",
+          "type": "count_by_object_type",
+          "widget_type": "count_by_object_type",
+          "config": {
+            "filters": [
+              {
+                "type": "object_type",
+                "values": ["product", "raw_material", "product_spec", "supplier", "customer", "project"]
+              }
+            ]
+          }
+        },
+        {
+          "key": "recent_engineering_changes",
+          "title": "Recent Engineering Changes",
+          "type": "recent_changes",
+          "widget_type": "recent_changes",
+          "config": {
+            "limit": 10
+          }
+        }
+      ]
+    },
+    {
+      "key": "document_health",
+      "label": "Document Health",
+      "name": "Document Health",
+      "widgets": [
+        {
+          "key": "missing_required_documents",
+          "title": "Missing Required Documents",
+          "type": "missing_required_documents",
+          "widget_type": "missing_required_documents",
+          "config": {
+            "limit": 25,
+            "requirements": [
+              {
+                "object_type_key": "product",
+                "document_types": ["specification", "tds"]
+              },
+              {
+                "object_type_key": "raw_material",
+                "document_types": ["tds", "sds", "compliance"]
+              },
+              {
+                "object_type_key": "product_spec",
+                "document_types": ["controlled_document"]
+              }
+            ]
+          }
+        },
+        {
+          "key": "document_records_by_status",
+          "title": "Document Records by Status",
+          "type": "count_by_status",
+          "widget_type": "count_by_status",
+          "config": {
+            "filters": [
+              {
+                "type": "object_type",
+                "value": "document"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "key": "project_workload",
+      "label": "Project Workload",
+      "name": "Project Workload",
+      "widgets": [
+        {
+          "key": "overdue_project_tasks",
+          "title": "Overdue Project Tasks",
+          "type": "overdue_project_tasks",
+          "widget_type": "overdue_project_tasks",
+          "config": {
+            "limit": 20
+          }
+        },
+        {
+          "key": "workflow_bottlenecks",
+          "title": "Workflow Bottlenecks",
+          "type": "workflow_bottlenecks",
+          "widget_type": "workflow_bottlenecks",
+          "config": {
+            "limit": 20
+          }
+        },
+        {
+          "key": "projects_by_status",
+          "title": "Projects by Status",
+          "type": "count_by_status",
+          "widget_type": "count_by_status",
+          "config": {
+            "filters": [
+              {
+                "type": "object_type",
+                "value": "project"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "key": "missing_data",
+      "label": "Missing Data",
+      "name": "Missing Data",
+      "widgets": [
+        {
+          "key": "products_missing_status_notes",
+          "title": "Products Missing Status Notes",
+          "type": "count_by_status",
+          "widget_type": "count_by_status",
+          "config": {
+            "filters": [
+              {
+                "type": "object_type",
+                "value": "product"
+              },
+              {
+                "type": "field_equals",
+                "field": "status_notes",
+                "value": ""
+              }
+            ]
+          }
+        },
+        {
+          "key": "materials_missing_compliance",
+          "title": "Materials Missing Compliance",
+          "type": "missing_required_documents",
+          "widget_type": "missing_required_documents",
+          "config": {
+            "limit": 25,
+            "requirements": [
+              {
+                "object_type_key": "raw_material",
+                "document_types": ["tds", "sds", "compliance"]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

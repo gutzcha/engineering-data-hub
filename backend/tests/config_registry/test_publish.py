@@ -55,13 +55,14 @@ def test_duplicate_field_keys_block_publish(user, valid_data):
     draft = create_draft_from_current(user)
     product = valid_data["object_types"][0]
     product["fields"].append(copy.deepcopy(product["fields"][0]))
+    duplicate_index = len(product["fields"]) - 1
     draft.data = valid_data
     draft.save()
 
     errors = validate_draft(draft)
 
     assert {
-        "path": "object_types[0].fields[1].key",
+        "path": f"object_types[0].fields[{duplicate_index}].key",
         "code": "duplicate_field_key",
         "message": "Field keys must be unique within an object type.",
     } in errors
