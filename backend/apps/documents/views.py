@@ -213,7 +213,11 @@ class DocumentViewSet(viewsets.ViewSet):
 
     def _lock_document(self, pk):
         return get_object_or_404(
-            Document.objects.select_for_update().select_related("owner_record"),
+            Document.objects.select_for_update().select_related(
+                "owner_record",
+                "current_revision",
+                "folder",
+            ),
             pk=pk,
         )
 
