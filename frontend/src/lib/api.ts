@@ -51,7 +51,7 @@ async function request<T>(method: HttpMethod, path: string, body?: unknown): Pro
     return undefined as T;
   }
 
-  return response.json() as Promise<T>;
+  return parseJsonResponse<T>(response);
 }
 
 function requestHeaders(method: HttpMethod, body: unknown, isFormData: boolean) {
@@ -107,4 +107,15 @@ async function errorMessage(response: Response) {
   } catch {
     return text ? `${fallback}: ${text}` : fallback;
   }
+}
+
+async function parseJsonResponse<T>(response: Response) {
+  const contentType = response.headers.get("Content-Type") ?? "";
+  if (!contentType.toLowerCase().includes("application/json")) {
+    throw new Error(
+      `API request returned a non-JSON response (${contentType || "unknown content type"}) instead of JSON.`
+    );
+  }
+
+  return response.json() as Promise<T>;
 }

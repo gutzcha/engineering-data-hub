@@ -71,4 +71,21 @@ describe("api client", () => {
       })
     );
   });
+
+  it("reports a clear error when a successful response is not json", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response("<!doctype html><title>App</title>", {
+            status: 200,
+            headers: { "Content-Type": "text/html" }
+          })
+      )
+    );
+
+    await expect(apiGet("/projects/workload/")).rejects.toThrow(
+      /non-JSON response.*instead of JSON/i
+    );
+  });
 });
