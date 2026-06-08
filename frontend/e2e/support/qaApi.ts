@@ -5,6 +5,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { plasticPdfManifest, type PlasticPdfSource } from "./plasticPdfManifest";
+
 export const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "https://plastic-hub.local";
 export const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 export const DEFAULT_PDF_URL =
@@ -54,6 +56,30 @@ export type DocumentPayload = {
     state: string;
     extraction_status: string;
   } | null;
+};
+
+export type DownloadedPlasticPdf = PlasticPdfSource & {
+  path: string;
+  sha256: string;
+  bytes: number;
+  fallback: boolean;
+  error?: string;
+};
+
+export type ClientReadinessSeedManifest = {
+  runId: string;
+  actor: string;
+  activeConfigVersion: number;
+  records: {
+    productRecordId: string;
+    projectRecordIds: string[];
+  };
+  projects: Array<{ id: string; recordId: string; name: string }>;
+  projectTasks: Array<{ id: number; projectId: string; title: string; state: string }>;
+  workflowTasks: Array<{ id: number; title: string; state: string; relatedRecordId: string }>;
+  managedFolders: Array<{ id: number; recordId: string; relativePath: string }>;
+  folderEvents: Array<{ id: number; path: string; reviewStatus: string }>;
+  dashboardKey: string;
 };
 
 export type QaUserSetup =
@@ -213,6 +239,61 @@ export async function downloadExternalPdf(request: APIRequestContext) {
   return pdfPath;
 }
 
+export async function downloadPlasticPdfSet(request: APIRequestContext) {
+  const assetDir = path.join(REPO_ROOT, "frontend", "test-results", "qa-assets", "plastic-pdf-set");
+  mkdirSync(assetDir, { recursive: true });
+  const downloaded: DownloadedPlasticPdf[] = [];
+
+  for (const [index, source] of plasticPdfManifest.entries()) {
+    const pdfPath = path.join(assetDir, `${String(index + 1).padStart(2, "0")}-${safeAssetName(source.label)}.pdf`);
+    const metaPath = `${pdfPath}.json`;
+    let body: Buffer;
+    let fallback = false;
+    let error: string | undefined;
+
+    if (existsSync(pdfPath) && existsSync(metaPath)) {
+      const cached = JSON.parse(readFileSync(metaPath, "utf8")) as DownloadedPlasticPdf;
+      downloaded.push(cached);
+      continue;
+    }
+
+    try {
+      const response = await request.get(source.url, { timeout: 45_000 });
+      if (!response.ok()) {
+        throw new Error(`HTTP ${response.status()} ${response.statusText()}`);
+      }
+      body = Buffer.from(await response.body());
+      if (body.length <= 1_000 || body.subarray(0, 4).toString() !== "%PDF") {
+        throw new Error(`Response was not a valid PDF fixture (${body.length} bytes).`);
+      }
+    } catch (caught) {
+      fallback = true;
+      error = caught instanceof Error ? caught.message : String(caught);
+      body = fallbackPdfBytes(source);
+    }
+
+    expect(body.length, source.label).toBeGreaterThan(1_000);
+    expect(body.subarray(0, 4).toString(), source.label).toBe("%PDF");
+    writeFileSync(pdfPath, body);
+    const sha256 = createHash("sha256").update(body).digest("hex");
+    writeFileSync(`${pdfPath}.sha256`, sha256);
+    const entry = {
+      ...source,
+      path: pdfPath,
+      sha256,
+      bytes: body.length,
+      fallback,
+      ...(error ? { error } : {})
+    };
+    writeFileSync(metaPath, JSON.stringify(entry, null, 2));
+    downloaded.push(entry);
+  }
+
+  writeFileSync(path.join(assetDir, "manifest.json"), JSON.stringify(downloaded, null, 2));
+  expect(downloaded).toHaveLength(20);
+  return downloaded;
+}
+
 export async function getJson<T>(request: APIRequestContext, url: string, expectedStatus = 200) {
   const response = await request.get(url);
   await expectJson(response, expectedStatus);
@@ -272,6 +353,38 @@ export function requireMutableQaTarget() {
   throw new Error(
     `Refusing to mutate non-local QA target ${BASE_URL}. Set QA_ALLOW_NON_LOCAL_MUTATION=true to override.`
   );
+}
+
+export function seedClientReadinessDemo(runId: string) {
+  requireMutableQaTarget();
+  const output = execFileSync(
+    "docker",
+    [
+      "compose",
+      "-p",
+      COMPOSE_PROJECT_NAME,
+      "-f",
+      "compose.yaml",
+      "-f",
+      "compose.dev.yaml",
+      "exec",
+      "-T",
+      "-e",
+      "ALLOW_CLIENT_READINESS_SEED=true",
+      "backend",
+      "python",
+      "manage.py",
+      "seed_client_readiness_demo",
+      "--run-id",
+      runId
+    ],
+    {
+      cwd: REPO_ROOT,
+      encoding: "utf-8",
+      timeout: 120_000
+    }
+  );
+  return JSON.parse(output.trim()) as ClientReadinessSeedManifest;
 }
 
 export function isLocalQaTarget(baseUrl: string) {
@@ -390,6 +503,44 @@ function filePayload(filePath: string) {
     mimeType: filePath.toLowerCase().endsWith(".pdf") ? "application/pdf" : "application/octet-stream",
     buffer: readFileSync(filePath)
   };
+}
+
+function safeAssetName(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+}
+
+function fallbackPdfBytes(source: PlasticPdfSource) {
+  const escapedLabel = source.label.replace(/[()\\]/g, "");
+  const escapedUrl = source.url.replace(/[()\\]/g, "");
+  const body = `%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 220 >>
+stream
+BT /F1 12 Tf 72 720 Td (Client-readiness generated fallback plastics PDF.) Tj 0 -18 Td (${escapedLabel}) Tj 0 -18 Td (${escapedUrl}) Tj 0 -18 Td (Material data: density, tensile, impact, melt flow, compliance.) Tj ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+trailer
+<< /Root 1 0 R >>
+%%EOF
+${"%".repeat(1200)}
+`;
+  return Buffer.from(body, "utf8");
 }
 
 function seedScript() {

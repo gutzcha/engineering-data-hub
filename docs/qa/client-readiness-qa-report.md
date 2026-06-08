@@ -2,137 +2,212 @@
 
 Date: 2026-06-08
 
-## Summary
+## Current Status
 
-The client-readiness QA suite now covers the core Plastic Engineering Data Hub workflows end to end. It creates records, edits and releases them, proves records cannot be deleted, archives records instead, creates record versions, uploads a real plastic-related PDF from the internet, releases controlled document revisions, checks document library browsing, validates admin permission boundaries, exercises projects, relationships, imports, exports, backups, audit, search, folders, dashboards, and workflow tasks.
+This report supersedes the earlier one-PDF QA summary. The new client-readiness sweep targets the Home operational overview, document action UI, record archive/version workflows, status filter correctness, local-only population seeding, and 20 public plastic-related PDF uploads.
 
-Final automated status: all checks passed.
+Final verification has now been completed against the local Docker stack. The strict browser sweep ran with readiness gates enabled and no skipped client-readiness paths.
 
-## External Test Document
+## Confirmed Bugs Found
 
-The document lifecycle test downloads and uploads the Plastic-Craft polycarbonate PDF:
-
-https://plastic-craft.com/content/SDS/polycarbonate.pdf
-
-The QA helper stores the downloaded PDF and SHA-256 checksum under ignored Playwright test artifacts, then uploads the actual PDF bytes through the app's multipart document API.
-
-## Automated Evidence
-
-- Playwright client-readiness suite: 34 passed across Chromium desktop and Chromium mobile.
-- Backend regression suite: 229 passed.
-- Frontend unit suite: 26 passed across 14 files.
-- Frontend typecheck/lint: passed.
-- Docker stack was rebuilt and recreated from this QA worktree before the final browser run.
-
-## Fixed Findings
-
-### QA-REC-001: Records Had No Archive Flow
+### QA-HOME-001: Home Operational Overview Used Fake Static Counts
 
 Severity: Critical
 
-Status: Fixed.
+Status: Fixed in code; focused Vitest verified.
 
-Impact: Users needed a safe alternative to deletion. The app now exposes record archive behavior, preserves audit history, and keeps DELETE unavailable.
+Evidence found:
 
-Review-loop hardening: archive now has explicit negative permission coverage proving non-admin engineers cannot archive records.
+- Static Home metrics showed `128` open records, `17` pending review, `4` blocked tasks, and `312` controlled documents.
+- Recent Record Activity showed static record IDs such as `PE-1042`.
+- Recent records were not clickable real records.
 
-Evidence: `backend/apps/records/models.py`, `backend/apps/records/views.py`, `backend/tests/records/test_records.py`, `frontend/e2e/client-readiness-records.spec.ts`.
+Fix:
 
-### QA-REC-002: Records Had No Version History
+- Home now fetches `/records/`, `/workflow-tasks/?state=open`, and `/documents/`.
+- Metrics are computed from live API data.
+- Recent activity is sorted by record timestamps and record codes link to `/records/:id`.
+- The inert Home export button was removed.
 
-Severity: Critical
+Verification:
 
-Status: Fixed.
+- `npm --prefix frontend test -- --run src/app/App.test.tsx`
+- `npm --prefix frontend test -- --run src/app/clientReadinessStaticAudit.test.ts`
 
-Impact: Users needed controlled snapshots before changing important record data. The app now supports record version creation and listing with immutable snapshot payloads.
-
-Review-loop hardening: version tests prove saved snapshots remain unchanged after the live record is edited.
-
-Evidence: `backend/apps/records/models.py`, `backend/apps/records/serializers.py`, `backend/apps/records/views.py`, `backend/apps/records/migrations/0003_recordversion_archived_status.py`.
-
-### QA-DOC-001: Document Revision Release Failed On PostgreSQL
+### QA-DOC-003: Document Preview And Audit Opened Raw JSON
 
 Severity: High
 
-Status: Fixed.
+Status: Fixed in code; focused Vitest verified.
 
-Impact: Releasing a controlled document revision returned HTTP 500 because PostgreSQL rejected `FOR UPDATE` on nullable joined relations. The lock query now avoids nullable joins, and the release lifecycle passes with a real polycarbonate PDF.
+Evidence found:
 
-Evidence: `backend/apps/documents/views.py`, `backend/tests/documents/test_revisions.py`, `frontend/e2e/client-readiness-documents.spec.ts`.
+- `Preview` linked directly to `/api/documents/:id/preview/`.
+- `Audit` linked directly to `/api/documents/:id/audit/`.
+- `Open` only repeated document metadata and did not offer useful preview/audit surfaces.
 
-### QA-DOC-002: Document Library Could Not List Or Retrieve Documents
+Fix:
+
+- `Preview` routes to `/documents/:id?view=preview`.
+- `Audit` routes to `/documents/:id?view=audit`.
+- Document detail renders formatted Preview and Audit panels.
+- Download remains a direct file download.
+- Existing documents now have an Add Revision UI.
+
+Verification:
+
+- `npm --prefix frontend test -- --run src/features/documents/DocumentPanel.test.tsx src/app/clientReadinessStaticAudit.test.ts`
+
+### QA-REC-003: Archive And Version History Were API-Only
+
+Severity: High
+
+Status: Fixed in code; focused Vitest verified.
+
+Evidence found:
+
+- Backend archive/version endpoints existed, but users could not archive or view/create versions from the record detail page.
+
+Fix:
+
+- Record detail now exposes Archive with confirmation.
+- Record detail now exposes Version History and Create Version.
+- Record delete remains unavailable.
+
+Verification:
+
+- `npm --prefix frontend test -- --run src/features/records/RecordDetail.test.tsx`
+
+### QA-UI-001: Client-Facing Inert Or Incorrect Controls
 
 Severity: Medium
 
-Status: Fixed.
+Status: Fixed for confirmed instances; static guard added.
 
-Impact: Users could see documents from source records but could not browse the document workspace or open document detail pages. The backend now supports list/retrieve with record-level view checks, and the frontend document workspace/detail page renders controlled document metadata.
+Evidence found:
 
-Evidence: `backend/apps/documents/views.py`, `backend/tests/documents/test_revisions.py`, `frontend/src/features/documents/DocumentPanel.tsx`, `frontend/e2e/client-readiness-documents.spec.ts`.
+- Records page had an inert `Configure View` button.
+- Dashboard header showed `Direct Load`.
+- Task Inbox showed a disabled `Find` button even though filtering happens live.
+- Saved View status options included unsupported `blocked` and omitted `archived`.
 
-### QA-ROUTE-001: Direct `/admin` Reload Fell Through To Django Admin
+Fix:
+
+- Removed inert Records `Configure View`.
+- Replaced dashboard `Direct Load` with `No Dashboard Selected`.
+- Removed disabled Task Inbox `Find`; search input live filtering is tested.
+- Saved View and Record status filters now use `draft`, `released`, `archived`.
+
+Verification:
+
+- `npm --prefix frontend test -- --run src/features/dashboards/DashboardPage.test.tsx src/features/workflows/TaskInbox.test.tsx`
+- `npm --prefix frontend test -- --run src/app/clientReadinessStaticAudit.test.ts`
+
+### QA-SEED-001: Full Population Plan Assumed APIs That Do Not Exist
+
+Severity: Critical
+
+Status: Fixed in plan and code; focused backend test verified.
+
+Evidence found:
+
+- Project creation, workflow task creation, and folder event creation are not fully available through public app APIs.
+
+Fix:
+
+- Added a local-only Django command: `seed_client_readiness_demo`.
+- Command refuses unsafe targets unless `ALLOW_CLIENT_READINESS_SEED=true` or local DEBUG conditions are met.
+- Command creates run-stamped projects, project tasks, workflow tasks, managed folders, folder events, dashboard widgets, and a JSON manifest.
+
+Verification:
+
+- `& 'E:\plastic-engineering-data-hub\backend\.venv\Scripts\python.exe' -m pytest backend\tests\api\test_seed_client_readiness_demo.py`
+
+### QA-DOC-004: Uploaded PDF Extraction Could Save NUL Bytes And Return HTML 500
 
 Severity: High
 
-Status: Fixed.
+Status: Fixed in code; backend regression and full Playwright verified.
 
-Impact: Direct browser reloads of the React Admin workspace could show the Django admin route through the frontend dev proxy. The frontend dev proxy no longer captures `/admin`, so React routing owns the workspace route.
+Evidence found:
 
-Evidence: `frontend/vite.config.ts`, `frontend/e2e/client-readiness-records.spec.ts`.
+- Full population upload of real plastic PDFs triggered `PostgreSQL text fields cannot contain NUL (0x00) bytes`.
+- The API returned Django debug HTML instead of controlled JSON.
 
-### QA-PROJ-001: Project Task Move Failed On PostgreSQL
+Fix:
 
-Severity: High
+- Document extraction now removes NUL bytes before saving extracted text.
+- Regression coverage verifies the sanitizer before database persistence.
 
-Status: Fixed.
+Verification:
 
-Impact: Moving project board tasks returned HTTP 500 because PostgreSQL rejected `FOR UPDATE` on a nullable joined column. The lock query now avoids nullable joins.
+- `& 'E:\plastic-engineering-data-hub\backend\.venv\Scripts\python.exe' -m pytest backend\tests\documents\test_extraction.py`
+- Full strict Playwright population upload completed with 20 controlled documents.
 
-Evidence: `backend/apps/projects/services.py`, `backend/tests/projects/test_projects.py`, `frontend/e2e/client-readiness-operations.spec.ts`.
+### QA-E2E-001: Browser QA Suite Used Unsafe Parallelism Against One Shared DB
 
-### QA-BACKUP-001: Backup Creation Returned HTML 500 When `pg_dump` Was Missing
+Severity: Medium
 
-Severity: High
+Status: Fixed in QA configuration.
 
-Status: Fixed.
+Evidence found:
 
-Impact: A system-admin backup request returned an HTML Django error page instead of a controlled JSON/API response. The backend image includes the PostgreSQL client, and the backup service now raises a controlled `BackupError` if the binary is missing.
+- Eight concurrent Playwright workers caused cross-test data races and list/loading flakes while the 20-PDF population test mutated the same local database.
 
-Review-loop hardening: nonzero `pg_dump` exits are also converted to controlled `BackupError` responses instead of leaking raw subprocess failures.
+Fix:
 
-Evidence: `backend/apps/backups/services.py`, `backend/tests/backups/test_backup_manifest.py`, final Playwright backup coverage.
+- Playwright now defaults to one worker for deterministic shared-stack QA.
+- `PLAYWRIGHT_WORKERS` can still be set explicitly for intentional stress runs.
 
-## Client-Readiness Coverage
+Verification:
 
-- Records: create through UI/API, edit, release, archive, version snapshots, delete prevention, audit coverage.
-- Admin/config: role separation, normal-user blocks, config-admin authority, destructive field-removal prevention.
-- Documents: real PDF download/upload, extraction preview, PDF download, revision release, released revision protection, library list/detail.
-- Search/traceability: product, material, specification, relationship, document extraction text, audit surfacing.
-- Projects: workload, board, timeline, task move, dependency creation, self/circular dependency rejection.
-- Imports/exports: multipart CSV dry-run/apply, records/audit/project-status XLSX downloads.
-- Operations: authenticated route health, dashboards, saved views, folders, workflow tasks, backups, JSON response gates.
-- Access: seeded QA roles for engineer, config admin, system admin, and read-only user.
-- Folder review actions: accept, ignore, assign, link-document, permission filtering, and indexing are covered by backend tests; Playwright keeps browser coverage to authenticated route and controlled JSON health.
+- Full strict Playwright suite passed with 38/38 tests using one worker.
 
-## Remaining Risk
+### QA-UI-002: Loading States Displayed Misleading Zero Counts
 
-No blocking product bugs were detected by the final automated suite. Remaining risk is outside this local QA scope: production network/TLS/SSO, real company file shares, restore drills on client infrastructure, non-Chromium browsers, and load/performance testing.
+Severity: Medium
 
-## How To Run
+Status: Fixed in code; full Playwright verified.
 
-From `frontend`:
+Evidence found:
+
+- Home could show `0` records/documents while records or documents were still loading.
+- The Documents page could show an empty library message before the library request finished.
+
+Fix:
+
+- Home metrics now display `Loading` independently per data source.
+- Recent Record Activity now depends only on the records query loading state.
+- Document Library now displays a loading state instead of a false empty list.
+
+## Population Coverage Added
+
+- Added `frontend/e2e/support/plasticPdfManifest.ts` with 20 public plastic-related PDF sources.
+- Added `downloadPlasticPdfSet()` with SHA-256 recording and explicit generated-fallback marking.
+- Added `frontend/e2e/client-readiness-population.spec.ts` to create:
+  - 10 suppliers
+  - 20 raw materials
+  - 15 products
+  - 12 product specs
+  - 20 controlled documents uploaded from the PDF manifest
+  - local-only project/workflow/folder/dashboard seed data through `seed_client_readiness_demo`
+- Population run writes `docs/qa/findings/population-run.md`.
+
+## Final Verification Evidence
 
 ```powershell
 $env:PLAYWRIGHT_BASE_URL='http://localhost:5173'
 $env:ALLOW_E2E_USER_SEEDING='true'
 $env:E2E_PASSWORD='qa-password-12345'
-npx playwright test
+$env:QA_POPULATE_FULL_DATASET='true'
+$env:ALLOW_CLIENT_READINESS_SEED='true'
+$env:STRICT_CLIENT_READINESS='true'
+npm exec -- playwright test --forbid-only
 ```
 
-From the repo root:
-
-```powershell
-npm --prefix frontend run lint
-npm --prefix frontend test -- --run
-& 'E:\plastic-engineering-data-hub\backend\.venv\Scripts\python.exe' -m pytest backend\tests
-```
+- Docker stack build/recreate: passed.
+- Frontend TypeScript: `npm run lint` passed.
+- Frontend unit suite: `npm test -- --run` passed, 16 files / 32 tests.
+- Backend suite: `pytest backend\tests` passed, 232 tests.
+- Strict Playwright suite: 38 passed / 0 failed using desktop and mobile Chromium projects.
+- Population pass uploaded 20 plastic-related PDFs and wrote `docs/qa/findings/population-run.md`.

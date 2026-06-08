@@ -24,6 +24,7 @@ describe("api client", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/accounts/me/",
       expect.objectContaining({
+        cache: "no-store",
         credentials: "include",
         method: "GET"
       })
@@ -41,6 +42,7 @@ describe("api client", () => {
       "/api/records/",
       expect.objectContaining({
         credentials: "include",
+        cache: "no-store",
         headers: {
           "Content-Type": "application/json",
           "X-CSRFToken": "session-token"
@@ -63,6 +65,7 @@ describe("api client", () => {
       "/api/documents/",
       expect.objectContaining({
         body: form,
+        cache: "no-store",
         credentials: "include",
         headers: {
           "X-CSRFToken": "upload-token"

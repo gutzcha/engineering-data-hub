@@ -32,6 +32,7 @@ export async function apiDelete(path: string): Promise<void> {
 async function request<T>(method: HttpMethod, path: string, body?: unknown): Promise<T> {
   const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
   const response = await fetch(apiUrl(path), {
+    cache: "no-store",
     method,
     credentials: "include",
     headers: requestHeaders(method, body, isFormData),

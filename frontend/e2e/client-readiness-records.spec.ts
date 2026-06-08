@@ -13,6 +13,7 @@ import {
   type RecordPayload
 } from "./support/qaApi";
 import { ensureQaReport, recordFinding } from "./support/qaReport";
+import { readinessGate } from "./support/strictReadiness";
 
 type FieldDefinition = {
   key: string;
@@ -57,12 +58,10 @@ type ValidationResult = {
 test.describe("client readiness records and admin controls", () => {
   test.beforeEach(async ({ request }) => {
     const health = await requireHealthyStack(request);
-    test.skip(!health.ok, health.message);
+    readinessGate(!health.ok, health.message);
 
     const users = ensureQaUsers();
-    if (!users.ok) {
-      test.skip(true, users.message);
-    }
+    readinessGate(!users.ok, users.ok ? "" : users.message);
     ensureQaReport();
   });
 

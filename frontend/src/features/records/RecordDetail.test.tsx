@@ -173,6 +173,50 @@ describe("RecordDetail", () => {
           return Response.json(productRecord);
         }
 
+        if (url === "/api/records/101/archive/" && method === "POST") {
+          return Response.json({
+            ...productRecord,
+            status: "archived"
+          });
+        }
+
+        if (url === "/api/records/101/versions/") {
+          if (method === "POST") {
+            return Response.json(
+              {
+                id: 2,
+                record: 101,
+                version_number: 2,
+                change_note: "Snapshot before release",
+                snapshot: {
+                  title: "Clear Film 720",
+                  status: "draft",
+                  data: productRecord.data
+                },
+                created_at: "2026-06-08T11:00:00Z"
+              },
+              { status: 201 }
+            );
+          }
+
+          return Response.json({
+            results: [
+              {
+                id: 1,
+                record: 101,
+                version_number: 1,
+                change_note: "Initial QA snapshot",
+                snapshot: {
+                  title: "Clear Film 720",
+                  status: "draft",
+                  data: productRecord.data
+                },
+                created_at: "2026-06-07T09:00:00Z"
+              }
+            ]
+          });
+        }
+
         if (url === "/api/records/101/graph/") {
           return Response.json({
             nodes: [
@@ -260,6 +304,9 @@ describe("RecordDetail", () => {
     expect(screen.getByText(/submit for review/i)).toBeInTheDocument();
     expect(screen.getAllByText(/thin wall redesign/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/created/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /version history/i })).toBeInTheDocument();
+    expect(screen.getByText(/initial qa snapshot/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /delete/i })).not.toBeInTheDocument();
 
     await user.clear(screen.getByLabelText(/commercial name/i));
     await user.type(screen.getByLabelText(/commercial name/i), "Clear Film 820");
@@ -350,6 +397,30 @@ describe("RecordDetail", () => {
         requests.some(
           (request) =>
             request.method === "POST" && request.url === "/api/folder-events/8/ignore/"
+        )
+      ).toBe(true)
+    );
+
+    await user.type(screen.getByLabelText(/version change note/i), "Snapshot before release");
+    await user.click(screen.getByRole("button", { name: /create version/i }));
+    expect(await screen.findByText("Version 2 created.")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        requests.some(
+          (request) =>
+            request.method === "POST" && request.url === "/api/records/101/versions/"
+        )
+      ).toBe(true)
+    );
+
+    await user.click(screen.getByRole("button", { name: /^archive$/i }));
+    expect(screen.getByText(/records are not deleted/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /confirm archive/i }));
+    await waitFor(() =>
+      expect(
+        requests.some(
+          (request) =>
+            request.method === "POST" && request.url === "/api/records/101/archive/"
         )
       ).toBe(true)
     );

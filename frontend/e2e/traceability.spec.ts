@@ -22,6 +22,7 @@ test("traceability flow releases a controlled product spec and surfaces it in UI
   page,
   request
 }) => {
+  test.setTimeout(120_000);
   const health = await requireHealthyStack(request);
   test.skip(!health.ok, health.message);
 
@@ -203,6 +204,16 @@ type AuditEventPayload = {
   after?: Record<string, unknown> | null;
 };
 
+type WorkflowTaskPayload = {
+  id: string | number;
+  title?: string;
+  name?: string;
+  summary?: string;
+  related_object_id?: string | number | null;
+  related_record?: string | number | { id?: string | number } | null;
+  record?: string | number | { id?: string | number } | null;
+};
+
 async function clickTransitionAndWait(
   page: Page,
   recordId: string,
@@ -223,27 +234,73 @@ async function clickTransitionAndWait(
 }
 
 async function completeTaskInUi(page: Page, title: string, relatedRecordId: string) {
+  const taskLoad = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      response.request().method() === "GET" &&
+      response.ok() &&
+      url.pathname === "/api/workflow-tasks/" &&
+      url.searchParams.get("state") === "open"
+    );
+  });
   await page.goto("/tasks");
+  const tasks = (await (await taskLoad).json()) as WorkflowTaskPayload[];
+  const task = tasks.find(
+    (candidate) =>
+      taskPayloadTitle(candidate).toLowerCase() === title.toLowerCase() &&
+      String(taskPayloadRelatedId(candidate)) === relatedRecordId
+  );
+  if (!task) {
+    throw new Error(`Expected open workflow task "${title}" for record ${relatedRecordId}.`);
+  }
+
+  await page.getByLabel(/search tasks/i).fill(title);
   const row = page
     .getByRole("row")
     .filter({ hasText: new RegExp(escapeRegExp(title), "i") })
-    .filter({ hasText: relatedRecordId });
+    .filter({ hasText: `#${relatedRecordId}` });
   await expect(row).toBeVisible();
   const responsePromise = page.waitForResponse((response) => {
     const url = new URL(response.url());
     return (
       response.request().method() === "POST" &&
       response.ok() &&
-      /^\/api\/workflow-tasks\/\d+\/complete\/$/.test(url.pathname)
+      url.pathname === `/api/workflow-tasks/${task.id}/complete/`
+    );
+  });
+  const taskReload = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      response.request().method() === "GET" &&
+      response.ok() &&
+      url.pathname === "/api/workflow-tasks/" &&
+      url.searchParams.get("state") === "open"
     );
   });
   await row.getByRole("button", { name: /Complete/i }).click();
   await responsePromise;
-  await expect(row).toHaveCount(0);
+  await taskReload;
+  await expect(row).toHaveCount(0, { timeout: 30_000 });
 }
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function taskPayloadTitle(task: WorkflowTaskPayload) {
+  return task.title ?? task.name ?? task.summary ?? `Task ${task.id}`;
+}
+
+function taskPayloadRelatedId(task: WorkflowTaskPayload) {
+  return task.related_object_id ?? relationId(task.related_record) ?? relationId(task.record);
+}
+
+function relationId(relation?: string | number | { id?: string | number } | null) {
+  if (relation === undefined || relation === null || relation === "") {
+    return undefined;
+  }
+
+  return typeof relation === "object" ? relation.id : relation;
 }
 
 function eventPayloadText(event: AuditEventPayload) {

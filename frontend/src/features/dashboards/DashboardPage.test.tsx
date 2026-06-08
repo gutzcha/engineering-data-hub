@@ -131,6 +131,13 @@ describe("DashboardPage", () => {
     expect(within(widget).getByText("2")).toBeInTheDocument();
     expect(within(widget).getByText(/released/i)).toBeInTheDocument();
     expect(screen.getByText(/record.updated/i)).toBeInTheDocument();
+    const savedViewStatus = screen.getByLabelText(/saved view status/i);
+    expect(within(savedViewStatus).getByRole("option", { name: "Archived" })).toHaveValue(
+      "archived"
+    );
+    expect(
+      within(savedViewStatus).queryByRole("option", { name: "Blocked" })
+    ).not.toBeInTheDocument();
 
     await user.selectOptions(screen.getByLabelText(/^saved view$/i), "5");
     await user.click(screen.getByRole("button", { name: /run saved view/i }));

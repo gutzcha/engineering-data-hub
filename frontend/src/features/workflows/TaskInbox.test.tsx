@@ -87,6 +87,13 @@ describe("TaskInbox", () => {
     expect(await screen.findByText("Approve resin spec")).toBeInTheDocument();
     expect(screen.getByText("Review supplier dossier")).toBeInTheDocument();
     expect(screen.getByText("Archive trial package")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^find$/i })).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText(/search tasks/i), "supplier");
+    expect(screen.queryByText("Approve resin spec")).not.toBeInTheDocument();
+    expect(screen.getByText("Review supplier dossier")).toBeInTheDocument();
+    expect(screen.queryByText("Archive trial package")).not.toBeInTheDocument();
+    await user.clear(screen.getByLabelText(/search tasks/i));
 
     await user.selectOptions(screen.getByLabelText(/assignment/i), "me");
     expect(screen.getByText("Approve resin spec")).toBeInTheDocument();

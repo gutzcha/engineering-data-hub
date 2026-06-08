@@ -147,7 +147,7 @@ export function SavedViewBuilder({
               <option value="">Any status</option>
               <option value="draft">Draft</option>
               <option value="released">Released</option>
-              <option value="blocked">Blocked</option>
+              <option value="archived">Archived</option>
             </select>
           </label>
           <label className="field-control">

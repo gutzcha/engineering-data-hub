@@ -2,7 +2,6 @@ import {
   BarChart3,
   ClipboardCheck,
   Database,
-  Download,
   FileText,
   FolderKanban,
   History,
@@ -10,14 +9,16 @@ import {
   Plus,
   Search,
   Settings,
-  SlidersHorizontal,
   UploadCloud
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
+import { useMemo } from "react";
 import { Link, Navigate, Route, Routes, useParams } from "react-router-dom";
 
 import { DataTable } from "../components/DataTable";
 import { StatusBadge } from "../components/StatusBadge";
+import type { StatusTone } from "../components/StatusBadge";
 import { ConfigWorkspace } from "../features/admin-config/ConfigWorkspace";
 import { LoginPage } from "../features/auth/LoginPage";
 import { AuditTimeline } from "../features/audit/AuditTimeline";
@@ -35,6 +36,7 @@ import { RecordDetail } from "../features/records/RecordDetail";
 import { RecordList } from "../features/records/RecordList";
 import { SearchPage } from "../features/search/SearchPage";
 import { TaskInbox } from "../features/workflows/TaskInbox";
+import { apiGet } from "../lib/api";
 
 export type NavigationItem = {
   label: string;
@@ -106,45 +108,62 @@ export const navigationItems: NavigationItem[] = [
   }
 ];
 
-type RecordQueueItem = {
-  id: string;
-  area: string;
-  owner: string;
-  status: "ready" | "review" | "blocked";
-  updated: string;
+type ApiListResponse<T> = T[] | { results?: T[] };
+
+type HomeRecord = {
+  id: string | number;
+  code?: string;
+  title?: string;
+  name?: string;
+  object_type_key?: string;
+  object_type_label?: string;
+  owner?: string;
+  status?: string;
+  updated_at?: string;
+  created_at?: string;
 };
 
-const recordQueue: RecordQueueItem[] = [
-  {
-    id: "PE-1042",
-    area: "Injection molding trials",
-    owner: "Materials Lab",
-    status: "review",
-    updated: "Today"
-  },
-  {
-    id: "PE-1038",
-    area: "Regrind characterization",
-    owner: "Process Engineering",
-    status: "ready",
-    updated: "Yesterday"
-  },
-  {
-    id: "PE-1029",
-    area: "Supplier resin dossier",
-    owner: "Quality",
-    status: "blocked",
-    updated: "Jun 4"
-  }
-];
+type HomeTask = {
+  id: string | number;
+  title?: string;
+  state?: string;
+  status?: string;
+  due_at?: string;
+  due_date?: string;
+};
 
-const statusLabel: Record<RecordQueueItem["status"], string> = {
-  ready: "Ready",
-  review: "In Review",
-  blocked: "Blocked"
+type HomeDocument = {
+  id: string | number;
+  title?: string;
+  state?: string;
+  status?: string;
 };
 
 function HomePage() {
+  const recordsQuery = useQuery({
+    queryKey: ["home", "records"],
+    queryFn: () => apiGet<ApiListResponse<HomeRecord>>("/records/")
+  });
+  const tasksQuery = useQuery({
+    queryKey: ["home", "workflow-tasks", "open"],
+    queryFn: () => apiGet<ApiListResponse<HomeTask>>("/workflow-tasks/?state=open")
+  });
+  const documentsQuery = useQuery({
+    queryKey: ["home", "documents"],
+    queryFn: () => apiGet<ApiListResponse<HomeDocument>>("/documents/")
+  });
+
+  const records = itemsFromResponse(recordsQuery.data);
+  const tasks = itemsFromResponse(tasksQuery.data);
+  const documents = itemsFromResponse(documentsQuery.data);
+  const openRecords = records.filter((record) => record.status !== "archived");
+  const overdueTasks = tasks.filter(isOpenTaskOverdue);
+  const recentRecords = useMemo(
+    () => [...records].sort(compareRecordUpdatedAt).slice(0, 5),
+    [records]
+  );
+  const hasError = recordsQuery.isError || tasksQuery.isError || documentsQuery.isError;
+
   return (
     <div className="page-stack">
       <section className="workspace-header" aria-labelledby="overview-title">
@@ -153,10 +172,6 @@ function HomePage() {
           <h1 id="overview-title">Operational Overview</h1>
         </div>
         <div className="header-actions">
-          <button className="button button-secondary" type="button">
-            <Download aria-hidden="true" size={16} />
-            Export
-          </button>
           <Link className="button button-primary" to="/records/new">
             <Plus aria-hidden="true" size={16} />
             New Record
@@ -165,11 +180,38 @@ function HomePage() {
       </section>
 
       <section className="metrics-grid" aria-label="Workspace metrics">
-        <Metric label="Open records" value="128" status="active" />
-        <Metric label="Pending review" value="17" status="review" />
-        <Metric label="Blocked tasks" value="4" status="blocked" />
-        <Metric label="Controlled documents" value="312" status="ready" />
+        <Metric
+          label="Open records"
+          value={recordsQuery.isLoading ? "Loading" : openRecords.length}
+          status="active"
+          to="/records"
+        />
+        <Metric
+          label="Pending review"
+          value={tasksQuery.isLoading ? "Loading" : tasks.length}
+          status="review"
+          to="/tasks"
+        />
+        <Metric
+          label="Overdue work"
+          value={tasksQuery.isLoading ? "Loading" : overdueTasks.length}
+          status="blocked"
+          to="/tasks?due=overdue"
+        />
+        <Metric
+          label="Controlled documents"
+          value={documentsQuery.isLoading ? "Loading" : documents.length}
+          status="ready"
+          to="/documents"
+        />
       </section>
+
+      {hasError && (
+        <div className="admin-alert" role="alert">
+          <strong>Operational overview failed</strong>
+          <span>{homeErrorMessage(recordsQuery.error ?? tasksQuery.error ?? documentsQuery.error)}</span>
+        </div>
+      )}
 
       <section className="table-panel" aria-labelledby="queue-title">
         <div className="panel-heading">
@@ -177,35 +219,48 @@ function HomePage() {
             <p className="section-kicker">Queue</p>
             <h2 id="queue-title">Recent Record Activity</h2>
           </div>
-          <StatusBadge tone="review">Review Needed</StatusBadge>
+          <StatusBadge tone={recordsQuery.isLoading ? "neutral" : recentRecords.length ? "active" : "ready"}>
+            {recordsQuery.isLoading ? "Loading" : `${recentRecords.length} Recent`}
+          </StatusBadge>
         </div>
         <DataTable
-          data={recordQueue}
+          data={recentRecords}
+          emptyMessage={
+            recordsQuery.isLoading ? "Loading recent records." : "No record activity is available yet."
+          }
           columns={[
             {
               accessorKey: "id",
-              header: "Record"
+              header: "Record",
+              cell: ({ row }) => (
+                <Link className="text-link" to={`/records/${row.original.id}`}>
+                  {recordCode(row.original)}
+                </Link>
+              )
             },
             {
-              accessorKey: "area",
-              header: "Area"
+              id: "title",
+              header: "Title",
+              cell: ({ row }) => recordTitle(row.original)
             },
             {
               accessorKey: "owner",
-              header: "Owner"
+              header: "Owner",
+              cell: ({ row }) => row.original.owner || "Unassigned"
             },
             {
               accessorKey: "status",
               header: "Status",
               cell: ({ getValue }) => (
-                <StatusBadge tone={getValue<RecordQueueItem["status"]>()}>
-                  {statusLabel[getValue<RecordQueueItem["status"]>()]}
+                <StatusBadge tone={recordStatusTone(getValue<string>())}>
+                  {humanizeStatus(getValue<string>() ?? "draft")}
                 </StatusBadge>
               )
             },
             {
               accessorKey: "updated",
-              header: "Updated"
+              header: "Updated",
+              cell: ({ row }) => formatDate(row.original.updated_at ?? row.original.created_at)
             }
           ]}
         />
@@ -216,19 +271,21 @@ function HomePage() {
 
 function Metric({
   label,
+  to,
   value,
   status
 }: {
   label: string;
-  value: string;
+  to: string;
+  value: number | string;
   status: "active" | "ready" | "review" | "blocked";
 }) {
   return (
-    <article className="metric">
+    <Link className="metric metric-link" to={to}>
       <span>{label}</span>
       <strong>{value}</strong>
       <StatusBadge tone={status}>{statusLabelForMetric(status)}</StatusBadge>
-    </article>
+    </Link>
   );
 }
 
@@ -243,6 +300,70 @@ function statusLabelForMetric(status: "active" | "ready" | "review" | "blocked")
   return labels[status];
 }
 
+function itemsFromResponse<T>(response?: ApiListResponse<T>) {
+  if (Array.isArray(response)) {
+    return response;
+  }
+
+  return response?.results ?? [];
+}
+
+function compareRecordUpdatedAt(left: HomeRecord, right: HomeRecord) {
+  return recordTimestamp(right) - recordTimestamp(left);
+}
+
+function recordTimestamp(record: HomeRecord) {
+  const value = record.updated_at ?? record.created_at ?? "";
+  const timestamp = Date.parse(value);
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function recordCode(record: HomeRecord) {
+  return record.code ?? String(record.id);
+}
+
+function recordTitle(record: HomeRecord) {
+  return record.title ?? record.name ?? record.object_type_label ?? record.object_type_key ?? "Untitled record";
+}
+
+function recordStatusTone(status?: string): StatusTone {
+  if (status === "released") {
+    return "ready";
+  }
+
+  if (status === "archived") {
+    return "neutral";
+  }
+
+  return "review";
+}
+
+function humanizeStatus(value: string) {
+  return value.replace(/[_-]+/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function formatDate(value?: string) {
+  if (!value) {
+    return "Not recorded";
+  }
+
+  return new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(value));
+}
+
+function isOpenTaskOverdue(task: HomeTask) {
+  const dueDate = task.due_at ?? task.due_date;
+  if (!dueDate) {
+    return false;
+  }
+
+  const timestamp = Date.parse(dueDate);
+  return !Number.isNaN(timestamp) && timestamp < Date.now();
+}
+
+function homeErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Live operational data could not be loaded.";
+}
+
 function PlaceholderPage({ item }: { item: NavigationItem }) {
   const Icon = item.icon;
 
@@ -253,10 +374,6 @@ function PlaceholderPage({ item }: { item: NavigationItem }) {
           <p className="section-kicker">{item.description}</p>
           <h1 id={`${item.label}-title`}>{item.label}</h1>
         </div>
-        <button className="button button-secondary" type="button">
-          <SlidersHorizontal aria-hidden="true" size={16} />
-          Configure View
-        </button>
       </section>
       <section className="empty-state">
         <Icon aria-hidden="true" size={28} />

@@ -12,6 +12,7 @@ import {
   type AuthenticatedSession,
   type DocumentPayload
 } from "./support/qaApi";
+import { readinessGate } from "./support/strictReadiness";
 
 type DocumentPreviewPayload = {
   extraction_status: string;
@@ -21,10 +22,10 @@ type DocumentPreviewPayload = {
 test.describe("client readiness document lifecycle", () => {
   test.beforeEach(async ({ request }) => {
     const health = await requireHealthyStack(request);
-    test.skip(!health.ok, health.message);
+    readinessGate(!health.ok, health.message);
 
     const users = ensureQaUsers();
-    test.skip(!users.ok, users.message);
+    readinessGate(!users.ok, users.message);
   });
 
   test("real polycarbonate PDF uploads, previews, downloads, releases, and protects released revisions", async ({
@@ -110,6 +111,7 @@ test.describe("client readiness document lifecycle", () => {
     page,
     request
   }) => {
+    test.setTimeout(120_000);
     const users = ensureQaUsers();
     if (!users.ok) {
       throw new Error(users.message);

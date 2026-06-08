@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Archive,
   ClipboardCheck,
   History,
   Loader2,
@@ -84,10 +85,28 @@ type AuditEvent = {
 type AuditResponse = AuditEvent[] | { results?: AuditEvent[] };
 type FolderEventsResponse = FolderEvent[] | { results?: FolderEvent[] };
 
+type RecordVersion = {
+  id: string | number;
+  version_number?: number;
+  snapshot?: {
+    title?: string;
+    status?: string;
+    data?: RecordValues;
+  };
+  change_note?: string;
+  created_by?: string | number | null;
+  created_at?: string;
+};
+
+type RecordVersionsResponse = RecordVersion[] | { results?: RecordVersion[] };
+
 export function RecordDetail() {
   const { recordId = "" } = useParams();
   const queryClient = useQueryClient();
   const [draftValues, setDraftValues] = useState<RecordValues>({});
+  const [archiveConfirmation, setArchiveConfirmation] = useState(false);
+  const [versionNote, setVersionNote] = useState("");
+  const [versionNotice, setVersionNotice] = useState("");
 
   const configQuery = useQuery({
     queryKey: ["config", "active"],
@@ -124,6 +143,12 @@ export function RecordDetail() {
     enabled: Boolean(recordId)
   });
 
+  const versionsQuery = useQuery({
+    queryKey: ["records", recordId, "versions"],
+    queryFn: () => apiGet<RecordVersionsResponse>(`/records/${recordId}/versions/`),
+    enabled: Boolean(recordId)
+  });
+
   const saveRecord = useMutation({
     mutationFn: (data: RecordValues) =>
       apiPatch<RecordDetailData>(`/records/${recordId}/`, { data }),
@@ -136,6 +161,29 @@ export function RecordDetail() {
     mutationFn: () => apiPost<RecordDetailData>(`/records/${recordId}/release/`, {}),
     onSuccess: (updatedRecord) => {
       queryClient.setQueryData(["records", recordId], updatedRecord);
+    }
+  });
+
+  const archiveRecord = useMutation({
+    mutationFn: () => apiPost<RecordDetailData>(`/records/${recordId}/archive/`, {}),
+    onSuccess: (updatedRecord) => {
+      setArchiveConfirmation(false);
+      queryClient.setQueryData(["records", recordId], updatedRecord);
+      void queryClient.invalidateQueries({ queryKey: ["records"] });
+      void queryClient.invalidateQueries({ queryKey: ["audit", "records", recordId] });
+    }
+  });
+
+  const createVersion = useMutation({
+    mutationFn: () =>
+      apiPost<RecordVersion>(`/records/${recordId}/versions/`, {
+        change_note: versionNote.trim()
+      }),
+    onSuccess: (version) => {
+      setVersionNote("");
+      setVersionNotice(`Version ${version.version_number ?? version.id} created.`);
+      void queryClient.invalidateQueries({ queryKey: ["records", recordId, "versions"] });
+      void queryClient.invalidateQueries({ queryKey: ["audit", "records", recordId] });
     }
   });
 
@@ -265,14 +313,48 @@ export function RecordDetail() {
             <Rocket aria-hidden="true" size={16} />
             Release
           </button>
+          <button
+            className="button button-secondary"
+            type="button"
+            onClick={() =>
+              archiveConfirmation ? archiveRecord.mutate() : setArchiveConfirmation(true)
+            }
+            disabled={archiveRecord.isPending || record.status === "archived"}
+          >
+            {archiveRecord.isPending ? (
+              <Loader2 aria-hidden="true" size={16} />
+            ) : (
+              <Archive aria-hidden="true" size={16} />
+            )}
+            {archiveConfirmation ? "Confirm Archive" : "Archive"}
+          </button>
         </div>
       </section>
 
-      {(recordQuery.error || configQuery.error || saveRecord.error) && (
+      {archiveConfirmation && (
+        <div className="admin-alert" role="status">
+          <strong>Archive record?</strong>
+          <span>This keeps record history and removes it from active work. Records are not deleted.</span>
+        </div>
+      )}
+
+      {(recordQuery.error ||
+        configQuery.error ||
+        saveRecord.error ||
+        releaseRecord.error ||
+        archiveRecord.error ||
+        createVersion.error) && (
         <div className="admin-alert" role="alert">
           <strong>Record action failed</strong>
           <span>
-            {errorMessage(recordQuery.error ?? configQuery.error ?? saveRecord.error)}
+            {errorMessage(
+              recordQuery.error ??
+                configQuery.error ??
+                saveRecord.error ??
+                releaseRecord.error ??
+                archiveRecord.error ??
+                createVersion.error
+            )}
           </span>
         </div>
       )}
@@ -329,6 +411,22 @@ export function RecordDetail() {
           isLoading={workflowQuery.isLoading}
         />
         <ProjectLinksPanel projects={record.project_links ?? record.projects ?? []} />
+        <VersionHistoryPanel
+          error={versionsQuery.error}
+          isCreating={createVersion.isPending}
+          isLoading={versionsQuery.isLoading}
+          note={versionNote}
+          notice={versionNotice}
+          onCreate={() => {
+            setVersionNotice("");
+            createVersion.mutate();
+          }}
+          onNoteChange={(note) => {
+            setVersionNotice("");
+            setVersionNote(note);
+          }}
+          versions={itemsFromResponse(versionsQuery.data)}
+        />
         <AuditPanel events={itemsFromResponse(auditQuery.data)} isLoading={auditQuery.isLoading} />
       </div>
     </div>
@@ -367,6 +465,91 @@ function ProjectLinksPanel({ projects }: { projects: ProjectLink[] }) {
             </Link>
           ))
         )}
+      </div>
+    </section>
+  );
+}
+
+function VersionHistoryPanel({
+  error,
+  isCreating,
+  isLoading,
+  note,
+  notice,
+  onCreate,
+  onNoteChange,
+  versions
+}: {
+  error: unknown;
+  isCreating: boolean;
+  isLoading: boolean;
+  note: string;
+  notice: string;
+  onCreate: () => void;
+  onNoteChange: (note: string) => void;
+  versions: RecordVersion[];
+}) {
+  return (
+    <section className="table-panel detail-panel" aria-labelledby="record-version-title">
+      <div className="panel-heading">
+        <div>
+          <p className="section-kicker">Controlled snapshots</p>
+          <h2 id="record-version-title">Version History</h2>
+        </div>
+        <StatusBadge tone={versions.length ? "active" : "neutral"}>
+          {isLoading ? "Loading" : `${versions.length} Versions`}
+        </StatusBadge>
+      </div>
+      <div className="record-panel-body">
+        {notice && <div className="validation-success">{notice}</div>}
+        {error ? (
+          <div className="admin-alert" role="alert">
+            <strong>Version history failed</strong>
+            <span>{errorMessage(error)}</span>
+          </div>
+        ) : null}
+        <div className="admin-form-grid">
+          <label className="field-control">
+            <span>Change Note</span>
+            <input
+              aria-label="Version change note"
+              value={note}
+              onChange={(event) => onNoteChange(event.target.value)}
+            />
+          </label>
+          <button
+            className="button button-secondary"
+            type="button"
+            onClick={onCreate}
+            disabled={isCreating}
+          >
+            {isCreating ? (
+              <Loader2 aria-hidden="true" size={16} />
+            ) : (
+              <History aria-hidden="true" size={16} />
+            )}
+            Create Version
+          </button>
+        </div>
+        <div className="event-list" role="list" aria-label="Record versions">
+          {versions.length === 0 ? (
+            <p className="admin-muted">{isLoading ? "Loading versions." : "No versions recorded."}</p>
+          ) : (
+            versions.map((version) => (
+              <article className="event-item" role="listitem" key={version.id}>
+                <div>
+                  <strong>Version {version.version_number ?? version.id}</strong>
+                  <span>
+                    {[version.snapshot?.title, version.snapshot?.status, version.change_note]
+                      .filter(Boolean)
+                      .join(" · ") || "Snapshot recorded"}
+                  </span>
+                  <span>{formatDateTime(version.created_at)}</span>
+                </div>
+              </article>
+            ))
+          )}
+        </div>
       </div>
     </section>
   );

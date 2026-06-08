@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, ClipboardCheck, Loader2, Search, SlidersHorizontal } from "lucide-react";
+import { CheckCircle2, ClipboardCheck, Loader2, SlidersHorizontal } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -151,10 +151,6 @@ export function TaskInbox({
               placeholder="Title, assignee, state, object"
             />
           </label>
-          <button className="button button-secondary" type="button" disabled>
-            <Search aria-hidden="true" size={16} />
-            Find
-          </button>
         </div>
         <div className="filter-grid">
           <label className="field-control">

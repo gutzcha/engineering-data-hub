@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Filter, Plus, Search, SlidersHorizontal } from "lucide-react";
+import { Filter, Plus, Search } from "lucide-react";
 import type { FormEvent } from "react";
 import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -93,10 +93,6 @@ export function RecordList() {
           <h1 id="records-title">Records</h1>
         </div>
         <div className="header-actions">
-          <button className="button button-secondary" type="button">
-            <SlidersHorizontal aria-hidden="true" size={16} />
-            Configure View
-          </button>
           <Link className="button button-primary" to="/records/new">
             <Plus aria-hidden="true" size={16} />
             New Record
@@ -132,7 +128,7 @@ export function RecordList() {
           <FilterSelect
             label="Status"
             value={statusFilter}
-            options={["draft", "review", "released", "blocked"].map((status) => ({
+            options={["draft", "released", "archived"].map((status) => ({
               value: status,
               label: humanize(status)
             }))}

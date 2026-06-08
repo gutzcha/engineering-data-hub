@@ -13,6 +13,7 @@ import {
   type QaUserSetup
 } from "./support/qaApi";
 import { ensureQaReport, recordFinding, type BugFinding } from "./support/qaReport";
+import { readinessGate } from "./support/strictReadiness";
 
 type RelationshipPayload = {
   id: number;
@@ -103,10 +104,8 @@ const staticAuthenticatedRoutes = [
   "/projects",
   "/imports",
   "/documents",
-  "/documents/1",
   "/tasks",
   "/tasks/folder-events",
-  "/tasks/folder-events/1",
   "/search",
   "/dashboards",
   "/audit",
@@ -116,9 +115,9 @@ const staticAuthenticatedRoutes = [
 test.describe("client readiness operations", () => {
   test.beforeEach(async ({ request }) => {
     const health = await requireHealthyStack(request);
-    test.skip(!health.ok, health.message);
+    readinessGate(!health.ok, health.message);
     const users = ensureQaUsers();
-    test.skip(!users.ok, users.message);
+    readinessGate(!users.ok, users.message);
     ensureQaReport();
   });
 

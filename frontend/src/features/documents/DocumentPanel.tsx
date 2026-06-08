@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Eye, FileText, FileUp, Link as LinkIcon, Rocket } from "lucide-react";
-import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useState, type FormEvent } from "react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { StatusBadge } from "../../components/StatusBadge";
 import { apiGet, apiPostForm } from "../../lib/api";
@@ -31,6 +31,33 @@ export type DocumentItem = {
   audit_url?: string;
   current_revision?: DocumentRevision | null;
   revisions?: DocumentRevision[];
+};
+
+type DocumentPreview = {
+  document: string | number;
+  revision: string | number;
+  revision_label?: string;
+  file_name?: string;
+  mime_type?: string;
+  extraction_status?: string;
+  extracted_text?: string;
+  truncated?: boolean;
+};
+
+type DocumentAuditEvent = {
+  id: string | number;
+  actor?: string | number | null;
+  actor_username?: string | null;
+  action: string;
+  object_type?: string;
+  object_id?: string;
+  before?: Record<string, unknown> | null;
+  after?: Record<string, unknown> | null;
+  created_at?: string;
+};
+
+type AuditResponse = {
+  results?: DocumentAuditEvent[];
 };
 
 export type DocumentUploadMetadata = {
@@ -173,7 +200,7 @@ export function DocumentLibraryPage() {
             <h2 id="document-upload-title">Document Library</h2>
           </div>
           <StatusBadge tone={documentsQuery.data?.length ? "active" : "neutral"}>
-            {documentsQuery.data?.length ?? 0} Files
+            {documentsQuery.isLoading ? "Loading" : `${documentsQuery.data?.length ?? 0} Files`}
           </StatusBadge>
         </div>
         <div className="record-panel-body">
@@ -194,7 +221,11 @@ export function DocumentLibraryPage() {
           )}
           <DocumentPanel
             documents={documentsQuery.data ?? []}
-            emptyMessage="No controlled documents are available."
+            emptyMessage={
+              documentsQuery.isLoading
+                ? "Loading controlled documents."
+                : "No controlled documents are available."
+            }
             ownerRecordId={ownerRecord}
             isUploading={uploadDocument.isPending}
             onUpload={(file, metadata) => uploadDocument.mutate({ file, metadata })}
@@ -207,12 +238,52 @@ export function DocumentLibraryPage() {
 
 export function DocumentDetailPage() {
   const { documentId = "" } = useParams();
+  const [searchParams] = useSearchParams();
+  const queryClient = useQueryClient();
+  const activeView = searchParams.get("view") ?? "overview";
+  const [revisionLabel, setRevisionLabel] = useState("");
+  const [revisionFile, setRevisionFile] = useState<File | null>(null);
+  const [revisionNotice, setRevisionNotice] = useState("");
   const documentQuery = useQuery({
     queryKey: ["document", documentId],
     queryFn: () => apiGet<DocumentItem>(`/documents/${documentId}/`),
     enabled: documentId.length > 0
   });
+  const previewQuery = useQuery({
+    queryKey: ["document", documentId, "preview"],
+    queryFn: () => apiGet<DocumentPreview>(`/documents/${documentId}/preview/`),
+    enabled: documentId.length > 0 && activeView === "preview"
+  });
+  const auditQuery = useQuery({
+    queryKey: ["document", documentId, "audit"],
+    queryFn: () => apiGet<AuditResponse>(`/documents/${documentId}/audit/`),
+    enabled: documentId.length > 0 && activeView === "audit"
+  });
+  const addRevision = useMutation({
+    mutationFn: ({ file, label }: { file: File; label: string }) =>
+      apiPostForm<DocumentRevision>(
+        `/documents/${documentId}/revisions/`,
+        buildDocumentRevisionForm(file, label)
+      ),
+    onSuccess: (revision) => {
+      setRevisionFile(null);
+      setRevisionLabel("");
+      setRevisionNotice(
+        `Revision ${revision.revision_label ?? revision.version ?? revision.id ?? ""} uploaded.`.trim()
+      );
+      void queryClient.invalidateQueries({ queryKey: ["document", documentId] });
+      void queryClient.invalidateQueries({ queryKey: ["documents"] });
+    }
+  });
   const document = documentQuery.data;
+
+  function submitRevision(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const label = revisionLabel.trim();
+    if (revisionFile && label) {
+      addRevision.mutate({ file: revisionFile, label });
+    }
+  }
 
   return (
     <div className="page-stack">
@@ -244,6 +315,77 @@ export function DocumentDetailPage() {
       ) : (
         <DocumentPanel documents={[document]} emptyMessage="Document metadata is unavailable." />
       )}
+      {document && (
+        <>
+          <section className="filter-panel" aria-label="Document detail views">
+            <div className="segmented-tabs" role="tablist" aria-label="Document views">
+              <Link
+                className={activeView === "overview" ? "segmented-tab segmented-tab-active" : "segmented-tab"}
+                to={`/documents/${document.id}`}
+                role="tab"
+                aria-selected={activeView === "overview"}
+              >
+                Overview
+              </Link>
+              <Link
+                className={activeView === "preview" ? "segmented-tab segmented-tab-active" : "segmented-tab"}
+                to={`/documents/${document.id}?view=preview`}
+                role="tab"
+                aria-selected={activeView === "preview"}
+              >
+                Preview
+              </Link>
+              <Link
+                className={activeView === "audit" ? "segmented-tab segmented-tab-active" : "segmented-tab"}
+                to={`/documents/${document.id}?view=audit`}
+                role="tab"
+                aria-selected={activeView === "audit"}
+              >
+                Audit
+              </Link>
+              <a
+                className="segmented-tab"
+                href={document.download_url ?? `/api/documents/${document.id}/download/`}
+              >
+                Download
+              </a>
+            </div>
+          </section>
+
+          {activeView === "preview" && (
+            <DocumentPreviewPanel
+              preview={previewQuery.data}
+              isLoading={previewQuery.isLoading}
+              error={previewQuery.error}
+            />
+          )}
+          {activeView === "audit" && (
+            <DocumentAuditPanel
+              events={auditQuery.data?.results ?? []}
+              isLoading={auditQuery.isLoading}
+              error={auditQuery.error}
+            />
+          )}
+          {activeView === "overview" && (
+            <AddRevisionPanel
+              error={addRevision.error}
+              file={revisionFile}
+              isUploading={addRevision.isPending}
+              notice={revisionNotice}
+              onFileChange={(file) => {
+                setRevisionNotice("");
+                setRevisionFile(file);
+              }}
+              onLabelChange={(label) => {
+                setRevisionNotice("");
+                setRevisionLabel(label);
+              }}
+              onSubmit={submitRevision}
+              revisionLabel={revisionLabel}
+            />
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -265,6 +407,13 @@ export function buildDocumentUploadForm(file: File, metadata: DocumentUploadMeta
     formData.append("revision_label", metadata.revision_label);
   }
 
+  return formData;
+}
+
+export function buildDocumentRevisionForm(file: File, revisionLabel: string) {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("revision_label", revisionLabel);
   return formData;
 }
 
@@ -298,13 +447,13 @@ function DocumentListItem({
           <FileText aria-hidden="true" size={16} />
           Open
         </Link>
-        <a
+        <Link
           className="button button-secondary"
-          href={document.preview_url ?? `/api/documents/${document.id}/preview/`}
+          to={`/documents/${document.id}?view=preview`}
         >
           <Eye aria-hidden="true" size={16} />
           Preview
-        </a>
+        </Link>
         <a
           className="button button-secondary"
           href={document.download_url ?? `/api/documents/${document.id}/download/`}
@@ -322,15 +471,188 @@ function DocumentListItem({
           <Rocket aria-hidden="true" size={16} />
           Release
         </button>
-        <a
+        <Link
           className="button button-secondary"
-          href={document.audit_url ?? `/api/documents/${document.id}/audit/`}
+          to={`/documents/${document.id}?view=audit`}
         >
           <LinkIcon aria-hidden="true" size={16} />
           Audit
-        </a>
+        </Link>
       </div>
     </article>
+  );
+}
+
+function DocumentPreviewPanel({
+  error,
+  isLoading,
+  preview
+}: {
+  error: unknown;
+  isLoading: boolean;
+  preview?: DocumentPreview;
+}) {
+  const terms = materialTerms(preview?.extracted_text ?? "");
+
+  return (
+    <section className="table-panel detail-panel" aria-labelledby="document-preview-title">
+      <div className="panel-heading">
+        <div>
+          <p className="section-kicker">Extracted content</p>
+          <h2 id="document-preview-title">Document Preview</h2>
+        </div>
+        <StatusBadge tone={preview?.extraction_status === "extracted" ? "ready" : "neutral"}>
+          {isLoading ? "Loading" : preview?.extraction_status ?? "Unavailable"}
+        </StatusBadge>
+      </div>
+      <div className="record-panel-body">
+        {error ? (
+          <div className="admin-alert" role="alert">
+            <strong>Preview failed</strong>
+            <span>{errorMessage(error)}</span>
+          </div>
+        ) : isLoading ? (
+          <p className="admin-muted">Loading document preview.</p>
+        ) : preview ? (
+          <>
+            <div className="admin-status-row" aria-label="Document preview metadata">
+              <div className="admin-stat">
+                <span>Revision</span>
+                <strong>{preview.revision_label ?? preview.revision}</strong>
+              </div>
+              <div className="admin-stat">
+                <span>File</span>
+                <strong>{preview.file_name ?? "Not recorded"}</strong>
+              </div>
+              <div className="admin-stat">
+                <span>Material terms</span>
+                <strong>{terms.length ? terms.join(", ") : "None detected"}</strong>
+              </div>
+            </div>
+            {preview.truncated && (
+              <p className="admin-muted">Preview is shortened to the first extracted text segment.</p>
+            )}
+            <pre className="document-preview-text">
+              {preview.extracted_text?.trim() || "No extracted text is available for this revision."}
+            </pre>
+          </>
+        ) : (
+          <p className="admin-muted">No preview is available for this document.</p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function DocumentAuditPanel({
+  error,
+  events,
+  isLoading
+}: {
+  error: unknown;
+  events: DocumentAuditEvent[];
+  isLoading: boolean;
+}) {
+  return (
+    <section className="table-panel detail-panel" aria-labelledby="document-audit-title">
+      <div className="panel-heading">
+        <div>
+          <p className="section-kicker">History</p>
+          <h2 id="document-audit-title">Document Audit</h2>
+        </div>
+        <StatusBadge tone={events.length ? "active" : "neutral"}>
+          {isLoading ? "Loading" : `${events.length} Events`}
+        </StatusBadge>
+      </div>
+      <div className="record-panel-body event-list" role="list" aria-label="Document audit events">
+        {error ? (
+          <div className="admin-alert" role="alert">
+            <strong>Audit failed</strong>
+            <span>{errorMessage(error)}</span>
+          </div>
+        ) : isLoading ? (
+          <p className="admin-muted">Loading document audit history.</p>
+        ) : events.length ? (
+          events.map((event) => (
+            <article className="event-item" role="listitem" key={event.id}>
+              <strong>{humanize(event.action)}</strong>
+              <span>{event.actor_username ?? event.actor ?? "System"}</span>
+              <span>{formatDate(event.created_at)}</span>
+            </article>
+          ))
+        ) : (
+          <p className="admin-muted">No audit events are recorded for this document.</p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function AddRevisionPanel({
+  error,
+  file,
+  isUploading,
+  notice,
+  onFileChange,
+  onLabelChange,
+  onSubmit,
+  revisionLabel
+}: {
+  error: unknown;
+  file: File | null;
+  isUploading: boolean;
+  notice: string;
+  onFileChange: (file: File | null) => void;
+  onLabelChange: (label: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  revisionLabel: string;
+}) {
+  return (
+    <section className="table-panel detail-panel" aria-labelledby="add-revision-title">
+      <div className="panel-heading">
+        <div>
+          <p className="section-kicker">Controlled revision</p>
+          <h2 id="add-revision-title">Add Revision</h2>
+        </div>
+        <FileUp aria-hidden="true" size={18} />
+      </div>
+      <form className="record-panel-body" onSubmit={onSubmit}>
+        {notice && <div className="validation-success">{notice}</div>}
+        {error ? (
+          <div className="admin-alert" role="alert">
+            <strong>Revision upload failed</strong>
+            <span>{errorMessage(error)}</span>
+          </div>
+        ) : null}
+        <div className="admin-form-grid">
+          <label className="field-control">
+            <span>Revision Label</span>
+            <input
+              aria-label="New revision label"
+              value={revisionLabel}
+              onChange={(event) => onLabelChange(event.target.value)}
+            />
+          </label>
+          <label className="upload-control">
+            <FileUp aria-hidden="true" size={16} />
+            <span>{file?.name ?? "Choose revision file"}</span>
+            <input
+              aria-label="New revision file"
+              type="file"
+              onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
+            />
+          </label>
+        </div>
+        <button
+          className="button button-primary"
+          type="submit"
+          disabled={isUploading || !file || !revisionLabel.trim()}
+        >
+          <FileUp aria-hidden="true" size={16} />
+          {isUploading ? "Uploading" : "Add Revision"}
+        </button>
+      </form>
+    </section>
   );
 }
 
@@ -361,4 +683,18 @@ function formatDate(value?: string) {
   }
 
   return new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(value));
+}
+
+function materialTerms(text: string) {
+  const normalized = text.toLowerCase();
+  const terms = ["polycarbonate", "abs", "hdpe", "pvc", "polypropylene", "tensile", "density", "impact"];
+  return terms.filter((term) => normalized.includes(term));
+}
+
+function humanize(value: string) {
+  return value.replace(/[_-]+/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Document request failed.";
 }

@@ -139,7 +139,7 @@ export function DashboardPage() {
           </h1>
         </div>
         <StatusBadge tone={dashboard ? "active" : "neutral"}>
-          {dashboard ? `${dashboard.widgets.length} Widgets` : "Direct Load"}
+          {dashboard ? `${dashboard.widgets.length} Widgets` : "No Dashboard Selected"}
         </StatusBadge>
       </section>
 

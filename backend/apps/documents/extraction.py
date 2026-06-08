@@ -109,7 +109,11 @@ def _extract_image(path: Path) -> tuple[str, str]:
 
 
 def _cap_text(text: str) -> str:
-    return text[:MAX_EXTRACTED_TEXT_CHARS]
+    return _sanitize_text(text)[:MAX_EXTRACTED_TEXT_CHARS]
+
+
+def _sanitize_text(text: str) -> str:
+    return text.replace("\x00", "")
 
 
 def _joined_length(parts) -> int:

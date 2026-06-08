@@ -1,6 +1,6 @@
 import pytest
 
-from apps.documents.extraction import MAX_EXTRACTED_TEXT_CHARS, extract_text
+from apps.documents.extraction import MAX_EXTRACTED_TEXT_CHARS, _sanitize_text, extract_text
 
 
 def test_docx_extraction_reads_paragraphs_and_table_cells(tmp_path):
@@ -42,6 +42,13 @@ def test_docx_extraction_caps_extracted_text(tmp_path):
 
     assert status == "extracted"
     assert len(text) == MAX_EXTRACTED_TEXT_CHARS
+
+
+def test_extraction_removes_nul_bytes_before_database_save():
+    text = _sanitize_text("polycarbonate\x00tensile\x00data")
+
+    assert "\x00" not in text
+    assert text == "polycarbonatetensiledata"
 
 
 def test_xlsx_extraction_reads_visible_sheets_only(tmp_path):
