@@ -93,6 +93,13 @@ def validate_draft(draft: ConfigurationDraft) -> list[dict]:
     return errors
 
 
+def breaking_changes_for_draft(draft: ConfigurationDraft) -> list[dict]:
+    active_config = get_active_config()
+    if active_config is None:
+        return []
+    return _breaking_changes_between(active_config.data, draft.data)
+
+
 def _valid_object_type_keys(object_types):
     if not isinstance(object_types, list):
         return set()
@@ -325,7 +332,13 @@ def _validate_mapping(value, path, label, code_label, errors):
 
 
 @transaction.atomic
-def publish_draft(draft: ConfigurationDraft, user, request=None) -> ConfigurationVersion:
+def publish_draft(
+    draft: ConfigurationDraft,
+    user,
+    request=None,
+    *,
+    confirm_breaking_changes=False,
+) -> ConfigurationVersion:
     if draft.pk:
         draft = ConfigurationDraft.objects.select_for_update().get(pk=draft.pk)
 
@@ -343,6 +356,19 @@ def publish_draft(draft: ConfigurationDraft, user, request=None) -> Configuratio
     errors = validate_draft(draft)
     if errors:
         raise ConfigurationValidationError(errors)
+
+    breaking_changes = breaking_changes_for_draft(draft)
+    if breaking_changes and not confirm_breaking_changes:
+        raise ConfigurationValidationError(
+            [
+                {
+                    "path": "breaking_changes",
+                    "code": "breaking_changes_require_confirmation",
+                    "message": "Breaking configuration changes require confirmation.",
+                },
+                *breaking_changes,
+            ]
+        )
 
     configuration_version = ConfigurationVersion.objects.create(
         version=_allocate_next_version(),
@@ -373,6 +399,205 @@ def publish_draft(draft: ConfigurationDraft, user, request=None) -> Configuratio
 
 def get_active_config() -> ConfigurationVersion:
     return ConfigurationVersion.objects.order_by("-version").first()
+
+
+def _breaking_changes_between(current_data, draft_data):
+    if not isinstance(current_data, dict) or not isinstance(draft_data, dict):
+        return []
+
+    current_object_types = _definitions_by_key(current_data.get("object_types"))
+    draft_object_types = _definitions_by_key(draft_data.get("object_types"))
+    changes = []
+
+    for object_type_key in sorted(set(current_object_types) - set(draft_object_types)):
+        current_object_type = current_object_types[object_type_key]
+        changes.append(
+            {
+                "path": f"object_types.{object_type_key}",
+                "code": "object_type_removed",
+                "message": (
+                    f"Object type '{_definition_label(current_object_type)}' "
+                    f"({object_type_key}) was removed. Existing records keep their data, "
+                    "but normal screens will no longer expose this object type."
+                ),
+            }
+        )
+
+    for object_type_key in sorted(set(current_object_types) & set(draft_object_types)):
+        current_object_type = current_object_types[object_type_key]
+        draft_object_type = draft_object_types[object_type_key]
+        changes.extend(
+            _field_breaking_changes(
+                object_type_key,
+                current_object_type,
+                draft_object_type,
+            )
+        )
+
+    return changes
+
+
+def _field_breaking_changes(object_type_key, current_object_type, draft_object_type):
+    current_fields = _definitions_by_key(current_object_type.get("fields"))
+    draft_fields = _definitions_by_key(draft_object_type.get("fields"))
+    object_label = _definition_label(current_object_type)
+    changes = []
+
+    for field_key in sorted(set(current_fields) - set(draft_fields)):
+        current_field = current_fields[field_key]
+        changes.append(
+            {
+                "path": f"object_types.{object_type_key}.fields.{field_key}",
+                "code": "field_removed",
+                "message": (
+                    f"Field '{_definition_label(current_field)}' ({field_key}) was removed "
+                    f"from {object_label}. Existing values stay in record data but will no "
+                    "longer appear in normal forms."
+                ),
+            }
+        )
+
+    for field_key in sorted(set(draft_fields) - set(current_fields)):
+        draft_field = draft_fields[field_key]
+        if draft_field.get("required") is True:
+            changes.append(
+                {
+                    "path": f"object_types.{object_type_key}.fields.{field_key}",
+                    "code": "required_field_added",
+                    "message": (
+                        f"Required field '{_definition_label(draft_field)}' ({field_key}) "
+                        f"was added to {object_label}. Existing records may need a value "
+                        "before they can be saved or released."
+                    ),
+                }
+            )
+
+    for field_key in sorted(set(current_fields) & set(draft_fields)):
+        current_field = current_fields[field_key]
+        draft_field = draft_fields[field_key]
+        changes.extend(
+            _single_field_breaking_changes(
+                object_type_key,
+                object_label,
+                field_key,
+                current_field,
+                draft_field,
+            )
+        )
+
+    return changes
+
+
+def _single_field_breaking_changes(
+    object_type_key,
+    object_label,
+    field_key,
+    current_field,
+    draft_field,
+):
+    field_label = _definition_label(current_field)
+    field_path = f"object_types.{object_type_key}.fields.{field_key}"
+    changes = []
+
+    current_type = current_field.get("type")
+    draft_type = draft_field.get("type")
+    if current_type != draft_type:
+        changes.append(
+            {
+                "path": field_path,
+                "code": "field_type_changed",
+                "message": (
+                    f"Field '{field_label}' ({field_key}) on {object_label} changed type "
+                    f"from {current_type} to {draft_type}. Existing values may fail "
+                    "validation until migrated."
+                ),
+            }
+        )
+
+    if current_field.get("required") is not True and draft_field.get("required") is True:
+        changes.append(
+            {
+                "path": field_path,
+                "code": "field_required_enabled",
+                "message": (
+                    f"Field '{field_label}' ({field_key}) on {object_label} is now required. "
+                    "Existing records without a value may fail validation or release."
+                ),
+            }
+        )
+
+    if current_field.get("unique") is not True and draft_field.get("unique") is True:
+        changes.append(
+            {
+                "path": field_path,
+                "code": "field_unique_enabled",
+                "message": (
+                    f"Field '{field_label}' ({field_key}) on {object_label} is now unique. "
+                    "Existing duplicate values may need cleanup."
+                ),
+            }
+        )
+
+    changes.extend(_removed_option_changes(field_path, object_label, field_key, field_label, current_field, draft_field))
+
+    current_target = _field_reference_target(current_field)
+    draft_target = _field_reference_target(draft_field)
+    if current_target != draft_target:
+        changes.append(
+            {
+                "path": field_path,
+                "code": "field_reference_target_changed",
+                "message": (
+                    f"Field '{field_label}' ({field_key}) on {object_label} changed reference "
+                    f"target from {current_target or 'none'} to {draft_target or 'none'}."
+                ),
+            }
+        )
+
+    return changes
+
+
+def _removed_option_changes(field_path, object_label, field_key, field_label, current_field, draft_field):
+    current_options = _field_options(current_field)
+    draft_options = _field_options(draft_field)
+    return [
+        {
+            "path": field_path,
+            "code": "field_option_removed",
+            "message": (
+                f"Choice option '{option}' was removed from field '{field_label}' "
+                f"({field_key}) on {object_label}. Existing records using it may fail "
+                "validation when edited."
+            ),
+        }
+        for option in sorted(current_options - draft_options)
+    ]
+
+
+def _definitions_by_key(items):
+    if not isinstance(items, list):
+        return {}
+    return {
+        item["key"]: item
+        for item in items
+        if isinstance(item, dict) and isinstance(item.get("key"), str)
+    }
+
+
+def _definition_label(definition):
+    return definition.get("label") or definition.get("name") or definition.get("key")
+
+
+def _field_options(field):
+    options = field.get("options")
+    if not isinstance(options, list):
+        return set()
+    return {option for option in options if isinstance(option, str)}
+
+
+def _field_reference_target(field):
+    target = field.get("target_object_type") or field.get("reference_target_type")
+    return target if isinstance(target, str) else ""
 
 
 def _is_snake_case_key(value):

@@ -363,6 +363,108 @@ describe("ConfigWorkspace", () => {
     ).toBeDisabled();
   });
 
+  it("requires confirmation before publishing breaking schema changes", async () => {
+    const requests: Array<{ body?: unknown; method: string; url: string }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input.toString();
+        requests.push({
+          body: init?.body ? JSON.parse(init.body.toString()) : undefined,
+          method: init?.method ?? "GET",
+          url
+        });
+
+        if (url === "/api/config/active/") {
+          return Response.json(activeConfiguration);
+        }
+
+        if (url === "/api/config/history/") {
+          return Response.json(historyConfigurations);
+        }
+
+        if (url === "/api/config/drafts/" && init?.method === "POST") {
+          return Response.json(
+            { id: 44, status: "draft", data: activeConfiguration.data },
+            { status: 201 }
+          );
+        }
+
+        if (url === "/api/config/drafts/44/" && init?.method === "PATCH") {
+          return Response.json({
+            id: 44,
+            status: "draft",
+            data: JSON.parse(init.body?.toString() ?? "{}").data
+          });
+        }
+
+        if (url === "/api/config/drafts/44/validate/" && init?.method === "POST") {
+          return Response.json({
+            errors: [],
+            breaking_changes: [
+              {
+                path: "object_types.raw_material.fields.material_family",
+                code: "field_removed",
+                message:
+                  "Field 'Material Family' (material_family) was removed from Raw Material. Existing values stay in record data but will no longer appear in normal forms."
+              }
+            ]
+          });
+        }
+
+        if (url === "/api/config/drafts/44/publish/" && init?.method === "POST") {
+          return Response.json(
+            {
+              ...activeConfiguration,
+              id: 3,
+              version: 8,
+              published_at: "2026-06-07T10:15:00Z"
+            },
+            { status: 201 }
+          );
+        }
+
+        return Response.json({ detail: "Unexpected request" }, { status: 500 });
+      })
+    );
+    const user = userEvent.setup();
+
+    renderWorkspace();
+
+    await screen.findAllByText(/published v7/i);
+    await user.click(screen.getByRole("button", { name: /create draft/i }));
+    await user.click(screen.getByRole("button", { name: /validate draft/i }));
+
+    expect(await screen.findByText(/material family.*removed/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /publish configuration/i })
+    ).toBeDisabled();
+
+    await user.click(screen.getByRole("tab", { name: /publish/i }));
+    const publishPanel = screen
+      .getByRole("heading", { name: /release configuration/i })
+      .closest("section") as HTMLElement;
+    const confirmation = within(publishPanel).getByRole("checkbox", {
+      name: /i understand this can hide or invalidate existing record data/i
+    });
+    const publishButton = within(publishPanel).getByRole("button", {
+      name: /publish configuration/i
+    });
+
+    expect(confirmation).not.toBeChecked();
+    expect(publishButton).toBeDisabled();
+
+    await user.click(confirmation);
+    expect(publishButton).toBeEnabled();
+    await user.click(publishButton);
+
+    await waitFor(() => expect(screen.getByText(/published v8/i)).toBeInTheDocument());
+    const publishRequest = requests.find(
+      (request) => request.url === "/api/config/drafts/44/publish/"
+    );
+    expect(publishRequest?.body).toEqual({ confirm_breaking_changes: true });
+  });
+
   it("clears validation success after a later draft persistence failure", async () => {
     let patchCount = 0;
     vi.stubGlobal(

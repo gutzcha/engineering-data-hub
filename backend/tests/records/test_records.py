@@ -680,7 +680,7 @@ def test_release_revalidates_active_config_and_refreshes_schema_version(
         }
     )
     draft.save()
-    new_config = publish_draft(draft, publisher)
+    new_config = publish_draft(draft, publisher, confirm_breaking_changes=True)
 
     client.force_login(approver)
     failed_release = post_json(client, f"/api/records/{record_id}/release/", {})

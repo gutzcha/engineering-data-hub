@@ -1,4 +1,5 @@
 SYSTEM_ADMIN_ROLE = "System Admin"
+CONFIGURATION_ADMIN_ROLE = "Configuration Admin"
 
 ACTION_FIELDS = {
     "view": "can_view",
@@ -7,6 +8,20 @@ ACTION_FIELDS = {
     "release": "can_release",
     "admin": "can_admin",
 }
+
+
+def is_system_admin(user) -> bool:
+    if not _is_active_authenticated_user(user):
+        return False
+    return user.is_superuser or user.groups.filter(name=SYSTEM_ADMIN_ROLE).exists()
+
+
+def is_configuration_admin(user) -> bool:
+    if is_system_admin(user):
+        return True
+    if not _is_active_authenticated_user(user):
+        return False
+    return user.groups.filter(name=CONFIGURATION_ADMIN_ROLE).exists()
 
 
 def user_can(user, action: str, object_type_key: str, record_id: str | None = None) -> bool:
@@ -19,16 +34,13 @@ def user_can(user, action: str, object_type_key: str, record_id: str | None = No
     if not permission_field:
         return False
 
-    if not user or not getattr(user, "is_authenticated", False) or not user.is_active:
+    if not _is_active_authenticated_user(user):
         return False
 
-    if user.is_superuser:
+    if is_system_admin(user):
         return True
 
     role_names = set(user.groups.values_list("name", flat=True))
-    if SYSTEM_ADMIN_ROLE in role_names:
-        return True
-
     if record_id:
         try:
             record_permissions = RecordPermission.objects.filter(
@@ -54,15 +66,12 @@ def records_user_can_view(user, queryset):
 
     from apps.accounts.models import ObjectPermission, RecordPermission
 
-    if not user or not getattr(user, "is_authenticated", False) or not user.is_active:
+    if not _is_active_authenticated_user(user):
         return queryset.none()
-    if user.is_superuser:
+    if is_system_admin(user):
         return queryset
 
     role_names = list(user.groups.values_list("name", flat=True))
-    if SYSTEM_ADMIN_ROLE in role_names:
-        return queryset
-
     object_type_keys = ObjectPermission.objects.filter(
         role_name__in=role_names,
         can_view=True,
@@ -80,15 +89,12 @@ def records_user_can_view(user, queryset):
 def user_has_view_scope(user, object_type_key: str) -> bool:
     from apps.accounts.models import ObjectPermission, RecordPermission
 
-    if not user or not getattr(user, "is_authenticated", False) or not user.is_active:
+    if not _is_active_authenticated_user(user):
         return False
-    if user.is_superuser:
+    if is_system_admin(user):
         return True
 
     role_names = list(user.groups.values_list("name", flat=True))
-    if SYSTEM_ADMIN_ROLE in role_names:
-        return True
-
     return (
         ObjectPermission.objects.filter(
             role_name__in=role_names,
@@ -101,3 +107,7 @@ def user_has_view_scope(user, object_type_key: str) -> bool:
             can_view=True,
         ).exists()
     )
+
+
+def _is_active_authenticated_user(user):
+    return bool(user and getattr(user, "is_authenticated", False) and user.is_active)

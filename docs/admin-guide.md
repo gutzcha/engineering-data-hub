@@ -138,4 +138,16 @@ Use this process for configuration changes:
 8. Publish during an agreed change window.
 9. Test record creation, folders, workflows, dashboards, and imports that depend on the changed fields.
 
-Avoid deleting fields during a pilot unless the data was never used. Prefer deprecating a field in the label or notes, then remove it after exports and reports have been updated.
+Configuration editing is role-gated. Users in the Configuration Admin role can create, edit, validate, and publish normal non-destructive configuration drafts. Destructive schema changes require System Admin approval and an explicit publish confirmation.
+
+The system treats these as destructive schema changes:
+
+1. Removing an object type.
+2. Removing a field, such as `material_family`.
+3. Changing a field type.
+4. Adding or enabling a required field.
+5. Enabling uniqueness on a field.
+6. Removing a choice or multi-choice option.
+7. Changing a record reference target.
+
+Avoid deleting fields during a pilot unless the data was never used. Prefer deprecating a field in the label or notes, then remove it after exports and reports have been updated. Removing a field from configuration does not erase historical record JSON; it hides the field from normal forms until an explicit data cleanup or migration is run.

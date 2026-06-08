@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  AlertTriangle,
   CheckCircle2,
   FileCheck2,
   History,
@@ -125,6 +126,8 @@ export function ConfigWorkspace() {
   const [validationErrors, setValidationErrors] = useState<ValidationError[] | null>(
     null
   );
+  const [breakingChanges, setBreakingChanges] = useState<ValidationError[]>([]);
+  const [breakingChangeConfirmed, setBreakingChangeConfirmed] = useState(false);
 
   const activeConfigQuery = useQuery({
     queryKey: ["admin-config", "active"],
@@ -142,6 +145,8 @@ export function ConfigWorkspace() {
       setDraft(createdDraft);
       setDraftData(normalizeConfigData(createdDraft.data));
       setValidationErrors(null);
+      setBreakingChanges([]);
+      setBreakingChangeConfirmed(false);
       setActiveView("draft");
     }
   });
@@ -153,18 +158,22 @@ export function ConfigWorkspace() {
       }
 
       await persistDraftData(draft.id);
-      return apiPost<{ errors: ValidationError[] }>(
+      return apiPost<{ errors: ValidationError[]; breaking_changes?: ValidationError[] }>(
         `/config/drafts/${draft.id}/validate/`,
         {}
       );
     },
     onSuccess: (result) => {
       setValidationErrors(result.errors);
+      setBreakingChanges(result.breaking_changes ?? []);
+      setBreakingChangeConfirmed(false);
       setActiveView("validation");
     },
     onError: (error) => {
       const message = errorMessage(error);
       setValidationErrors([{ path: "validate", code: "validate_failed", message }]);
+      setBreakingChanges([]);
+      setBreakingChangeConfirmed(false);
       setActiveView("validation");
     }
   });
@@ -176,11 +185,16 @@ export function ConfigWorkspace() {
       }
 
       await persistDraftData(draft.id);
-      return apiPost<ConfigVersion>(`/config/drafts/${draft.id}/publish/`, {});
+      const publishPayload = breakingChanges.length
+        ? { confirm_breaking_changes: breakingChangeConfirmed }
+        : {};
+      return apiPost<ConfigVersion>(`/config/drafts/${draft.id}/publish/`, publishPayload);
     },
     onSuccess: (publishedVersion) => {
       setDraft(null);
       setValidationErrors(null);
+      setBreakingChanges([]);
+      setBreakingChangeConfirmed(false);
       setDraftData(normalizeConfigData(publishedVersion.data));
       setActiveView("history");
       queryClient.setQueryData(["admin-config", "active"], publishedVersion);
@@ -205,6 +219,8 @@ export function ConfigWorkspace() {
   const validationPassed =
     workspaceError === null && validationErrors !== null && validationErrors.length === 0;
   const hasDraft = draft !== null;
+  const publishBlockedByBreakingChanges =
+    breakingChanges.length > 0 && !breakingChangeConfirmed;
 
   const objectTypeSummary = useMemo(() => {
     const count = editableData.object_types.length;
@@ -218,6 +234,8 @@ export function ConfigWorkspace() {
   function updateDraftData(updater: (data: ConfigData) => ConfigData) {
     setDraftData((current) => updater(normalizeConfigData(current)));
     setValidationErrors(null);
+    setBreakingChanges([]);
+    setBreakingChangeConfirmed(false);
   }
 
   async function persistDraftData(draftId: number) {
@@ -267,7 +285,12 @@ export function ConfigWorkspace() {
             className="button button-primary"
             type="button"
             onClick={() => publishDraft.mutate()}
-            disabled={!hasDraft || !validationPassed || publishDraft.isPending}
+            disabled={
+              !hasDraft ||
+              !validationPassed ||
+              publishBlockedByBreakingChanges ||
+              publishDraft.isPending
+            }
           >
             <Rocket aria-hidden="true" size={16} />
             Publish Configuration
@@ -347,6 +370,7 @@ export function ConfigWorkspace() {
       {activeView === "validation" && (
         <ValidationView
           errors={validationErrors}
+          breakingChanges={breakingChanges}
           isValidating={validateDraft.isPending}
           hasDraft={hasDraft}
         />
@@ -356,9 +380,12 @@ export function ConfigWorkspace() {
         <PublishView
           draft={draft}
           validationPassed={validationPassed}
+          breakingChanges={breakingChanges}
+          breakingChangeConfirmed={breakingChangeConfirmed}
           isPublishing={publishDraft.isPending}
           onValidate={() => validateDraft.mutate()}
           onPublish={() => publishDraft.mutate()}
+          onBreakingChangeConfirmed={setBreakingChangeConfirmed}
         />
       )}
 
@@ -474,13 +501,17 @@ function DraftEditorView({
 
 function ValidationView({
   errors,
+  breakingChanges,
   isValidating,
   hasDraft
 }: {
   errors: ValidationError[] | null;
+  breakingChanges: ValidationError[];
   isValidating: boolean;
   hasDraft: boolean;
 }) {
+  const hasBreakingChanges = breakingChanges.length > 0;
+
   return (
     <section className="table-panel admin-panel" aria-labelledby="validation-title">
       <div className="panel-heading">
@@ -488,8 +519,10 @@ function ValidationView({
           <p className="section-kicker">Validation results</p>
           <h2 id="validation-title">Draft Validation</h2>
         </div>
-        <StatusBadge tone={errors?.length ? "blocked" : errors ? "ready" : "neutral"}>
-          {validationStatusLabel(errors)}
+        <StatusBadge
+          tone={errors?.length ? "blocked" : hasBreakingChanges ? "review" : errors ? "ready" : "neutral"}
+        >
+          {validationStatusLabel(errors, breakingChanges)}
         </StatusBadge>
       </div>
       <div className="admin-panel-body">
@@ -502,6 +535,16 @@ function ValidationView({
           <div className="validation-success">
             <CheckCircle2 aria-hidden="true" size={18} />
             No validation errors.
+          </div>
+        )}
+        {hasBreakingChanges && (
+          <div className="validation-list" role="list" aria-label="Breaking schema changes">
+            {breakingChanges.map((change) => (
+              <div className="validation-item validation-warning" role="listitem" key={`${change.path}-${change.code}`}>
+                <strong>{change.path || "configuration"}</strong>
+                <span>{change.message}</span>
+              </div>
+            ))}
           </div>
         )}
         {errors && errors.length > 0 && (
@@ -522,16 +565,26 @@ function ValidationView({
 function PublishView({
   draft,
   validationPassed,
+  breakingChanges,
+  breakingChangeConfirmed,
   isPublishing,
   onValidate,
-  onPublish
+  onPublish,
+  onBreakingChangeConfirmed
 }: {
   draft: ConfigDraft | null;
   validationPassed: boolean;
+  breakingChanges: ValidationError[];
+  breakingChangeConfirmed: boolean;
   isPublishing: boolean;
   onValidate: () => void;
   onPublish: () => void;
+  onBreakingChangeConfirmed: (confirmed: boolean) => void;
 }) {
+  const hasBreakingChanges = breakingChanges.length > 0;
+  const publishDisabled =
+    !draft || !validationPassed || isPublishing || (hasBreakingChanges && !breakingChangeConfirmed);
+
   return (
     <section className="table-panel admin-panel" aria-labelledby="publish-title">
       <div className="panel-heading">
@@ -548,9 +601,35 @@ function PublishView({
           items={[
             ["Draft", draft ? `#${draft.id}` : "None"],
             ["Status", draft?.status ?? "No draft"],
-            ["Validation", validationPassed ? "Passed" : "Required"]
+            ["Validation", validationPassed ? "Passed" : "Required"],
+            ["Breaking changes", hasBreakingChanges ? breakingChanges.length.toString() : "None"]
           ]}
         />
+        {hasBreakingChanges && (
+          <div className="admin-alert" role="alert">
+            <AlertTriangle aria-hidden="true" size={18} />
+            <div>
+              <strong>System Admin confirmation required</strong>
+              <div className="validation-list" role="list" aria-label="Breaking changes to confirm">
+                {breakingChanges.map((change) => (
+                  <div className="validation-item validation-warning" role="listitem" key={`${change.path}-${change.code}`}>
+                    <strong>{change.path || "configuration"}</strong>
+                    <span>{change.message}</span>
+                  </div>
+                ))}
+              </div>
+              <label className="toggle-control breaking-change-confirmation">
+                <input
+                  type="checkbox"
+                  checked={breakingChangeConfirmed}
+                  disabled={!draft}
+                  onChange={(event) => onBreakingChangeConfirmed(event.target.checked)}
+                />
+                <span>I understand this can hide or invalidate existing record data</span>
+              </label>
+            </div>
+          </div>
+        )}
         <div className="admin-button-row">
           <button
             className="button button-secondary"
@@ -565,7 +644,7 @@ function PublishView({
             className="button button-primary"
             type="button"
             onClick={onPublish}
-            disabled={!draft || !validationPassed || isPublishing}
+            disabled={publishDisabled}
           >
             <Rocket aria-hidden="true" size={16} />
             Publish Configuration
@@ -648,12 +727,20 @@ function mergeHistory(history: ConfigVersion[], version: ConfigVersion) {
   );
 }
 
-function validationStatusLabel(errors: ValidationError[] | null) {
+function validationStatusLabel(errors: ValidationError[] | null, breakingChanges: ValidationError[] = []) {
   if (errors === null) {
     return "Not checked";
   }
 
-  return errors.length === 0 ? "No validation errors" : `${errors.length} errors`;
+  if (errors.length > 0) {
+    return `${errors.length} errors`;
+  }
+
+  if (breakingChanges.length > 0) {
+    return `${breakingChanges.length} breaking changes`;
+  }
+
+  return "No validation errors";
 }
 
 function errorMessage(error: unknown) {
