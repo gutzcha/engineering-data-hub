@@ -439,3 +439,50 @@ def test_project_workload_allows_record_scoped_project_viewer(
             "estimated_hours": 4.0,
         }
     ]
+
+
+@pytest.mark.django_db
+def test_project_list_returns_visible_projects_with_task_counts(
+    client,
+    user_factory,
+    active_project_config,
+    project_permissions,
+):
+    _ProjectBoardColumn, _ProjectEvent, ProjectTask = project_models()
+    manager = user_factory("project-list-manager", "Project Manager")
+    assignee = user_factory("project-list-assignee")
+    visible_project = create_project("Visible Project Index", manager)
+    hidden_project = create_project("Hidden Project Index", manager)
+    ProjectTask.objects.create(
+        project=visible_project,
+        title="Open listed task",
+        state=ProjectTask.State.IN_PROGRESS,
+        assignee_user=assignee,
+        estimated_hours=2,
+    )
+    ProjectTask.objects.create(
+        project=visible_project,
+        title="Completed listed task",
+        state=ProjectTask.State.DONE,
+        assignee_user=assignee,
+        estimated_hours=3,
+    )
+    ProjectTask.objects.create(project=hidden_project, title="Hidden listed task")
+    RecordPermission.objects.create(
+        role_name="Project Viewer",
+        object_type_key="project",
+        record=hidden_project.record,
+        can_view=False,
+    )
+    client.force_login(user_factory("project-list-viewer", "Project Viewer"))
+
+    response = client.get("/api/projects/")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert [project["name"] for project in body] == ["Visible Project Index"]
+    assert body[0]["id"] == str(visible_project.pk)
+    assert body[0]["record"] == str(visible_project.record_id)
+    assert body[0]["status"] == visible_project.status
+    assert body[0]["task_count"] == 2
+    assert body[0]["open_tasks"] == 1

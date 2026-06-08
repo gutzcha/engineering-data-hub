@@ -33,6 +33,10 @@ describe("ProjectList", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
+        if (input.toString() === "/api/projects/") {
+          return Response.json([]);
+        }
+
         if (input.toString() === "/api/projects/workload/") {
           return Response.json([]);
         }
@@ -58,5 +62,41 @@ describe("ProjectList", () => {
     await user.click(screen.getByRole("button", { name: /open/i }));
 
     expect(await screen.findByRole("heading", { name: /project detail route/i })).toBeInTheDocument();
+  });
+
+  it("lists visible projects as clickable project links", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (input.toString() === "/api/projects/") {
+          return Response.json([
+            {
+              id: "550e8400-e29b-41d4-a716-446655440000",
+              record: "record-1",
+              name: "Mold Transfer Project",
+              status: "active",
+              task_count: 5,
+              open_tasks: 3,
+              updated_at: "2026-06-08T10:00:00Z"
+            }
+          ]);
+        }
+
+        if (input.toString() === "/api/projects/workload/") {
+          return Response.json([]);
+        }
+
+        return Response.json({ detail: `Unexpected request ${input.toString()}` }, { status: 500 });
+      })
+    );
+
+    renderProjectList();
+
+    const projectLink = await screen.findByRole("link", { name: /mold transfer project/i });
+    expect(projectLink).toHaveAttribute(
+      "href",
+      "/projects/550e8400-e29b-41d4-a716-446655440000"
+    );
+    expect(screen.getByText("3 open / 5 total")).toBeInTheDocument();
   });
 });

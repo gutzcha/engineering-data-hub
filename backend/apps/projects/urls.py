@@ -2,6 +2,7 @@ from django.urls import path
 
 from apps.projects.views import (
     ProjectBoardView,
+    ProjectListView,
     ProjectTaskDependencyView,
     ProjectTaskMoveView,
     ProjectTimelineView,
@@ -9,6 +10,7 @@ from apps.projects.views import (
 )
 
 urlpatterns = [
+    path("api/projects/", ProjectListView.as_view(), name="project-list"),
     path("api/projects/workload/", ProjectWorkloadView.as_view(), name="project-workload"),
     path("api/projects/<uuid:project_id>/board/", ProjectBoardView.as_view(), name="project-board"),
     path(

@@ -1,4 +1,4 @@
-from django.db.models import Count, Sum
+from django.db.models import Count, Q, Sum
 from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 from rest_framework import permissions, status
@@ -177,6 +177,47 @@ class ProjectWorkloadView(APIView):
                     "estimated_hours": float(row["estimated_hours"]),
                 }
                 for row in rows
+            ],
+            status=status.HTTP_200_OK,
+        )
+
+
+class ProjectListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not user_has_view_scope(request.user, "project"):
+            raise PermissionDenied("You do not have permission to view projects.")
+        visible_project_record_ids = records_user_can_view(
+            request.user,
+            Record.objects.filter(object_type_key="project"),
+        ).values_list("pk", flat=True)
+        projects = (
+            Project.objects.select_related("record", "owner")
+            .filter(record_id__in=visible_project_record_ids)
+            .annotate(
+                task_count=Count("tasks", distinct=True),
+                open_tasks=Count(
+                    "tasks",
+                    filter=~Q(tasks__state=ProjectTask.State.DONE),
+                    distinct=True,
+                ),
+            )
+            .order_by("-updated_at", "name")
+        )
+        return Response(
+            [
+                {
+                    **_serialize_project(project),
+                    "description": project.description,
+                    "owner": project.owner.username if project.owner else None,
+                    "start_date": project.start_date.isoformat() if project.start_date else None,
+                    "target_date": project.target_date.isoformat() if project.target_date else None,
+                    "task_count": project.task_count,
+                    "open_tasks": project.open_tasks,
+                    "updated_at": project.updated_at.isoformat(),
+                }
+                for project in projects
             ],
             status=status.HTTP_200_OK,
         )

@@ -1,17 +1,38 @@
+import { useQuery } from "@tanstack/react-query";
 import { Search } from "lucide-react";
 import { FormEvent, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
+import { DataTable } from "../../components/DataTable";
 import { StatusBadge } from "../../components/StatusBadge";
+import { apiGet } from "../../lib/api";
 import { WorkloadView } from "./WorkloadView";
 
 const projectUuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+type ProjectListItem = {
+  id: string;
+  record?: string;
+  name: string;
+  description?: string;
+  status?: string;
+  owner?: string | null;
+  task_count?: number;
+  open_tasks?: number;
+  target_date?: string | null;
+  updated_at?: string;
+};
+
 export function ProjectList() {
   const navigate = useNavigate();
   const [projectLookup, setProjectLookup] = useState("");
   const [validationError, setValidationError] = useState("");
+  const projectsQuery = useQuery({
+    queryKey: ["projects"],
+    queryFn: () => apiGet<ProjectListItem[]>("/projects/")
+  });
+  const projects = projectsQuery.data ?? [];
 
   function openProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -33,10 +54,76 @@ export function ProjectList() {
           <p className="section-kicker">Engineering project workspaces</p>
           <h1 id="projects-title">Projects</h1>
         </div>
-        <StatusBadge tone="neutral">Direct Open</StatusBadge>
+        <StatusBadge tone={projects.length ? "active" : "neutral"}>
+          {projectsQuery.isLoading ? "Loading" : `${projects.length} Projects`}
+        </StatusBadge>
       </section>
 
-      <section className="filter-panel" aria-label="Open project">
+      {projectsQuery.error && (
+        <div className="admin-alert" role="alert">
+          <strong>Projects failed</strong>
+          <span>{errorMessage(projectsQuery.error)}</span>
+        </div>
+      )}
+
+      <section className="table-panel" aria-labelledby="project-index-title">
+        <div className="panel-heading">
+          <div>
+            <p className="section-kicker">Project index</p>
+            <h2 id="project-index-title">Active Projects</h2>
+          </div>
+          <StatusBadge tone={projects.length ? "active" : "neutral"}>
+            {projectsQuery.isLoading ? "Loading" : projects.length}
+          </StatusBadge>
+        </div>
+        <DataTable
+          data={projects}
+          emptyMessage={projectsQuery.isLoading ? "Loading projects." : "No visible projects are available."}
+          columns={[
+            {
+              id: "name",
+              header: "Project",
+              cell: ({ row }) => (
+                <Link className="text-link" to={`/projects/${row.original.id}`}>
+                  {row.original.name}
+                </Link>
+              )
+            },
+            {
+              id: "status",
+              header: "Status",
+              cell: ({ row }) => (
+                <StatusBadge tone={statusTone(row.original.status)}>
+                  {humanize(row.original.status ?? "planning")}
+                </StatusBadge>
+              )
+            },
+            {
+              id: "owner",
+              header: "Owner",
+              cell: ({ row }) => row.original.owner ?? "Unassigned"
+            },
+            {
+              id: "tasks",
+              header: "Tasks",
+              cell: ({ row }) =>
+                `${row.original.open_tasks ?? 0} open / ${row.original.task_count ?? 0} total`
+            },
+            {
+              id: "target",
+              header: "Target",
+              cell: ({ row }) => formatDate(row.original.target_date)
+            },
+            {
+              id: "updated",
+              header: "Updated",
+              cell: ({ row }) => formatDate(row.original.updated_at)
+            }
+          ]}
+        />
+      </section>
+
+      <section className="filter-panel" aria-label="Open project by UUID">
         <form className="search-form" onSubmit={openProject}>
           <label className="field-control field-control-wide">
             <span>Project UUID</span>
@@ -70,4 +157,32 @@ export function ProjectList() {
       <WorkloadView />
     </div>
   );
+}
+
+function statusTone(status?: string) {
+  if (status === "active" || status === "complete") {
+    return "ready";
+  }
+
+  if (status === "archived") {
+    return "neutral";
+  }
+
+  return "review";
+}
+
+function humanize(value: string) {
+  return value.replace(/[_-]+/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function formatDate(value?: string | null) {
+  if (!value) {
+    return "Not set";
+  }
+
+  return new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(value));
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Projects request failed.";
 }
