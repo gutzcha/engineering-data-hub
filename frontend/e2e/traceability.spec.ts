@@ -1,11 +1,16 @@
-import { expect, test } from "@playwright/test";
-import { execFileSync } from "node:child_process";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import type { APIRequestContext, APIResponse, BrowserContext, Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "https://plastic-hub.local";
-const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+import {
+  BASE_URL,
+  createRecord,
+  ensureQaUsers,
+  expectJson,
+  getJson,
+  loginWithSession,
+  postJson,
+  requireHealthyStack,
+  type AuthenticatedSession
+} from "./support/qaApi";
 
 test.use({
   baseURL: BASE_URL,
@@ -17,19 +22,19 @@ test("traceability flow releases a controlled product spec and surfaces it in UI
   page,
   request
 }) => {
-  const health = await request.get("/api/health/", { timeout: 15_000 }).catch(() => null);
-  test.skip(!health?.ok(), `Local stack is unavailable at ${BASE_URL}; start docker compose first.`);
+  const health = await requireHealthyStack(request);
+  test.skip(!health.ok, health.message);
 
-  const userSetup = ensureE2EUser();
-  if (!userSetup.ok) {
-    throw new Error(userSetup.message);
+  const users = ensureQaUsers();
+  if (!users.ok) {
+    throw new Error(users.message);
   }
-  const session = await loginWithSession(context, userSetup.credentials);
+  const session = await loginWithSession(context, users.systemAdmin);
 
   const me = await getJson<{ username: string }>(session.request, "/api/accounts/me/");
-  expect(me.username).toBe(userSetup.credentials.username);
+  expect(me.username).toBe(users.systemAdmin.username);
 
-  const stamp = new Date().toISOString().replace(/[-:.TZ]/g, "");
+  const stamp = timestamp();
   const productName = `PW Traceable Film ${stamp}`;
   const specText = `Playwright traceability PDF text ${stamp} flame retardant polypropylene`;
 
@@ -136,24 +141,29 @@ test("traceability flow releases a controlled product spec and surfaces it in UI
   await searchEventually(page, "flame retardant polypropylene", "Controlled Product Spec");
 
   await page.goto("/audit");
-  const auditEvents = page.getByRole("list", { name: /audit events/i }).getByRole("listitem");
-  await expect(
-    auditEvents
-      .filter({ hasText: "document.revision_released" })
-      .filter({ hasText: `document:${document.id}` })
-  ).toBeVisible();
-  await expect(
-    auditEvents
-      .filter({ hasText: "workflow.transition_performed" })
-      .filter({ hasText: productSpec.id })
-      .first()
-  ).toBeVisible();
-  await expect(
-    auditEvents
-      .filter({ hasText: "relationship.created" })
-      .filter({ hasText: productSpec.id })
-      .first()
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Audit Timeline" })).toBeVisible();
+  const documentAudit = await getJson<AuditPayload>(
+    session.request,
+    `/api/audit/?action=document.revision_released&object_type=document&object_id=${document.id}`
+  );
+  expect(documentAudit.results).toHaveLength(1);
+  const workflowAudit = await getJson<AuditPayload>(
+    session.request,
+    "/api/audit/?action=workflow.transition_performed&limit=500"
+  );
+  expect(workflowAudit.results.some((event) => eventPayloadText(event).includes(productSpec.id))).toBe(
+    true
+  );
+  const relationshipAudit = await getJson<AuditPayload>(
+    session.request,
+    "/api/audit/?action=relationship.created&object_type=relationship&limit=500"
+  );
+  expect(
+    relationshipAudit.results.some(
+      (event) =>
+        eventPayloadText(event).includes(product.id) && eventPayloadText(event).includes(productSpec.id)
+    )
+  ).toBe(true);
 });
 
 type RecordPayload = {
@@ -181,43 +191,17 @@ type DocumentPayload = {
   updated_at: string;
 };
 
-type AuthenticatedSession = {
-  request: APIRequestContext;
-  csrfToken: string;
+type AuditPayload = {
+  results: AuditEventPayload[];
 };
 
-async function loginWithSession(context: BrowserContext, credentials: E2ECredentials) {
-  const csrf = await getJson<{ csrfToken: string }>(context.request, "/api/accounts/csrf/");
-  const response = await context.request.post("/api/accounts/login/", {
-    headers: {
-      "content-type": "application/json",
-      "x-csrftoken": csrf.csrfToken
-    },
-    data: credentials
-  });
-  await expectJson(response, 200);
-  const refreshedCsrf = await getJson<{ csrfToken: string }>(
-    context.request,
-    "/api/accounts/csrf/"
-  );
-  return { request: context.request, csrfToken: refreshedCsrf.csrfToken };
-}
-
-async function createRecord(
-  session: AuthenticatedSession,
-  objectTypeKey: string,
-  data: Record<string, unknown>
-) {
-  return postJson<RecordPayload>(
-    session,
-    "/api/records/",
-    {
-      object_type_key: objectTypeKey,
-      data
-    },
-    201
-  );
-}
+type AuditEventPayload = {
+  action: string;
+  object_type: string;
+  object_id: string;
+  before?: Record<string, unknown> | null;
+  after?: Record<string, unknown> | null;
+};
 
 async function clickTransitionAndWait(
   page: Page,
@@ -262,6 +246,14 @@ function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function eventPayloadText(event: AuditEventPayload) {
+  return JSON.stringify({
+    object_id: event.object_id,
+    before: event.before,
+    after: event.after
+  });
+}
+
 async function searchAndExpect(page: Page, query: string, expectedText: string) {
   await page.goto("/search");
   await page.getByLabel("Search query").fill(query);
@@ -297,161 +289,8 @@ async function uploadSpecPdf(
       }
     }
   });
-  return expectJson<DocumentPayload>(response, 201);
-}
-
-async function getJson<T>(
-  request: APIRequestContext,
-  url: string,
-  expectedStatus = 200
-) {
-  const response = await request.get(url);
-  return expectJson<T>(response, expectedStatus);
-}
-
-async function postJson<T>(
-  session: AuthenticatedSession,
-  url: string,
-  data: unknown,
-  expectedStatus = 200
-) {
-  const response = await session.request.post(url, {
-    headers: {
-      "content-type": "application/json",
-      "x-csrftoken": session.csrfToken
-    },
-    data
-  });
-  return expectJson<T>(response, expectedStatus);
-}
-
-async function expectJson<T>(response: APIResponse, expectedStatus: number) {
-  const body = await response.text();
-  expect(response.status(), body).toBe(expectedStatus);
-  return JSON.parse(body) as T;
-}
-
-type E2ECredentials = {
-  username: string;
-  password: string;
-};
-
-type E2EUserSetup =
-  | { ok: true; credentials: E2ECredentials }
-  | { ok: false; message: string; credentials?: never };
-
-function ensureE2EUser(): E2EUserSetup {
-  const explicitCredentials = credentialsFromEnvironment();
-  if (!explicitCredentials) {
-    return {
-      ok: false,
-      message:
-        "Set E2E_USERNAME and E2E_PASSWORD for a pre-provisioned test account. " +
-        "Dev-only seeding still requires both values and is available only with " +
-        "ALLOW_E2E_USER_SEEDING=true against localhost, 127.0.0.1, ::1, or plastic-hub.local."
-    };
-  }
-
-  if (allowDevUserSeeding()) {
-    const seed = seedDevE2EUser(explicitCredentials);
-    if (!seed.ok) {
-      return { ok: false, message: seed.message };
-    }
-  }
-
-  return { ok: true, credentials: explicitCredentials };
-}
-
-function credentialsFromEnvironment(): E2ECredentials | undefined {
-  const username = process.env.E2E_USERNAME;
-  const password = process.env.E2E_PASSWORD;
-
-  if (username && password) {
-    return { username, password };
-  }
-
-  if (username || password) {
-    throw new Error("Both E2E_USERNAME and E2E_PASSWORD must be set together.");
-  }
-
-  return undefined;
-}
-
-function allowDevUserSeeding() {
-  return process.env.ALLOW_E2E_USER_SEEDING === "true" && isLocalDevTarget(BASE_URL);
-}
-
-function isLocalDevTarget(baseUrl: string) {
-  try {
-    const hostname = new URL(baseUrl).hostname.toLowerCase();
-    return ["localhost", "127.0.0.1", "::1", "[::1]", "plastic-hub.local"].includes(hostname);
-  } catch {
-    return false;
-  }
-}
-
-function seedDevE2EUser(credentials: E2ECredentials) {
-  const script = `
-import json
-from django.contrib.auth import get_user_model
-from django.contrib.auth.models import Group
-from apps.config_registry.models import ConfigurationVersion
-from apps.config_registry.services import create_draft_from_current, publish_draft
-from apps.workflows.models import WorkflowDefinition
-
-username = ${JSON.stringify(credentials.username)}
-password = ${JSON.stringify(credentials.password)}
-User = get_user_model()
-user, _ = User.objects.get_or_create(username=username)
-user.is_active = True
-user.is_staff = True
-user.set_password(password)
-user.save()
-group, _ = Group.objects.get_or_create(name="System Admin")
-user.groups.add(group)
-if (
-    not ConfigurationVersion.objects.exists()
-    or not WorkflowDefinition.objects.filter(object_type_key="product_spec", is_active=True).exists()
-):
-    publish_draft(create_draft_from_current(user), user)
-print(json.dumps({"username": username}))
-`;
-
-  try {
-    execFileSync(
-      "docker",
-      [
-        "compose",
-        "-f",
-        "compose.yaml",
-        "-f",
-        "compose.dev.yaml",
-        "exec",
-        "-T",
-        "backend",
-        "python",
-        "manage.py",
-        "shell",
-        "-c",
-        script
-      ],
-      {
-        cwd: REPO_ROOT,
-        encoding: "utf-8",
-        timeout: 30_000
-      }
-    );
-    return { ok: true };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return {
-      ok: false,
-      message:
-        "Dev-only backend setup failed. Run with the compose stack up, or use " +
-        "E2E_USERNAME and E2E_PASSWORD for a pre-provisioned account. " +
-        message
-    };
-  }
+  await expectJson(response, 201);
+  return response.json() as Promise<DocumentPayload>;
 }
 
 function pdfWithText(text: string) {
@@ -481,4 +320,9 @@ function pdfWithText(text: string) {
   pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
 
   return Buffer.from(pdf, "ascii");
+}
+
+function timestamp() {
+  const time = new Date().toISOString().replace(/[-:.TZ]/g, "");
+  return `${time}-${Math.random().toString(36).slice(2, 8)}`;
 }

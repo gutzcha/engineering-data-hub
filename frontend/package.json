@@ -8,7 +8,10 @@
     "start": "vite preview --host 0.0.0.0 --port 5173",
     "build": "tsc -b && vite build",
     "test": "vitest",
-    "lint": "tsc -b --pretty false"
+    "lint": "tsc -b --pretty false",
+    "e2e": "playwright test",
+    "e2e:qa": "playwright test",
+    "e2e:qa:headed": "playwright test --headed"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.80.5",

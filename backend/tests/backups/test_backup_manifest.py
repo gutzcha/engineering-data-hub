@@ -2,6 +2,7 @@ import hashlib
 import importlib
 import importlib.util
 import json
+import subprocess
 import tarfile
 from pathlib import Path
 
@@ -174,6 +175,46 @@ def test_backup_redacts_secret_url_query_values(tmp_path, settings, monkeypatch)
     assert service_url == "https://host/path?api_key=***&mode=safe&token=***"
     assert "secret" not in json.dumps(env_fingerprint["SERVICE_URL"])
     assert "hidden" not in json.dumps(env_fingerprint["SERVICE_URL"])
+
+
+def test_pg_dump_missing_binary_raises_backup_error(tmp_path, monkeypatch):
+    from django.db import connections
+    import apps.backups.services as backup_services
+
+    original_engine = connections["default"].settings_dict["ENGINE"]
+    connections["default"].settings_dict["ENGINE"] = "django.db.backends.postgresql"
+
+    def missing_binary(*_args, **_kwargs):
+        raise FileNotFoundError("pg_dump")
+
+    monkeypatch.setattr(backup_services.subprocess, "run", missing_binary)
+    try:
+        with pytest.raises(BackupError, match="pg_dump executable was not found"):
+            backup_services.run_pg_dump(tmp_path / "database.dump")
+    finally:
+        connections["default"].settings_dict["ENGINE"] = original_engine
+
+
+def test_pg_dump_nonzero_exit_raises_backup_error(tmp_path, monkeypatch):
+    from django.db import connections
+    import apps.backups.services as backup_services
+
+    original_engine = connections["default"].settings_dict["ENGINE"]
+    connections["default"].settings_dict["ENGINE"] = "django.db.backends.postgresql"
+
+    def failing_dump(*_args, **_kwargs):
+        raise subprocess.CalledProcessError(
+            returncode=2,
+            cmd=["pg_dump"],
+            stderr=b"permission denied for database",
+        )
+
+    monkeypatch.setattr(backup_services.subprocess, "run", failing_dump)
+    try:
+        with pytest.raises(BackupError, match="pg_dump failed with exit code 2"):
+            backup_services.run_pg_dump(tmp_path / "database.dump")
+    finally:
+        connections["default"].settings_dict["ENGINE"] = original_engine
 
 
 def _sha256(path: Path):

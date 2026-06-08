@@ -1,3 +1,5 @@
+from django.db import transaction
+from django.db.models import Max
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
@@ -7,8 +9,8 @@ from apps.accounts.permissions import records_user_can_view, user_can, user_has_
 from apps.audit.services import record_audit_event
 from apps.audit.views import audit_response, record_audit_events
 from apps.folders.services import ManagedFolderCollisionError, generate_managed_folder
-from apps.records.models import Record
-from apps.records.serializers import RecordSerializer, _record_snapshot
+from apps.records.models import Record, RecordVersion
+from apps.records.serializers import RecordSerializer, RecordVersionSerializer, _record_snapshot
 from apps.records.validation import get_object_type_definition, validate_record_data
 from apps.relationships.services import build_record_graph
 from apps.search.tasks import enqueue_record_index
@@ -83,6 +85,62 @@ class RecordViewSet(viewsets.ModelViewSet):
             request=request,
         )
         return Response(self.get_serializer(record).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"])
+    def archive(self, request, pk=None):
+        record = self.get_object()
+        if not user_can(request.user, "admin", record.object_type_key, record_id=str(record.pk)):
+            raise PermissionDenied("You do not have permission to archive this record.")
+        before = _record_snapshot(record)
+        record.status = Record.Status.ARCHIVED
+        record.updated_by = request.user
+        record.save(update_fields=["status", "updated_by", "updated_at"])
+        enqueue_record_index(record.pk)
+        record_audit_event(
+            request.user,
+            "record.archived",
+            record,
+            before=before,
+            after=_record_snapshot(record),
+            request=request,
+        )
+        return Response(self.get_serializer(record).data, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["get", "post"])
+    def versions(self, request, pk=None):
+        record = self.get_object()
+        if request.method == "GET":
+            if not user_can(request.user, "view", record.object_type_key, record_id=str(record.pk)):
+                raise PermissionDenied("You do not have permission to view this record's versions.")
+            serializer = RecordVersionSerializer(record.versions.all(), many=True)
+            return Response({"results": serializer.data}, status=status.HTTP_200_OK)
+
+        if not user_can(request.user, "edit", record.object_type_key, record_id=str(record.pk)):
+            raise PermissionDenied("You do not have permission to version this record.")
+        with transaction.atomic():
+            locked_record = Record.objects.select_for_update().get(pk=record.pk)
+            next_version = (
+                RecordVersion.objects.select_for_update()
+                .filter(record=locked_record)
+                .aggregate(max_version=Max("version_number"))["max_version"]
+                or 0
+            ) + 1
+            version = RecordVersion.objects.create(
+                record=locked_record,
+                version_number=next_version,
+                snapshot=_record_snapshot(locked_record),
+                change_note=str(request.data.get("change_note", "")).strip(),
+                created_by=request.user,
+            )
+            record_audit_event(
+                request.user,
+                "record.version_created",
+                locked_record,
+                before=None,
+                after=RecordVersionSerializer(version).data,
+                request=request,
+            )
+        return Response(RecordVersionSerializer(version).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["get"])
     def graph(self, request, pk=None):

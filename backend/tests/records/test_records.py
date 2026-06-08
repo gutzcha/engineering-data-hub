@@ -747,6 +747,111 @@ def test_patch_cannot_bypass_release_permission(client, user_factory, active_con
 
 
 @pytest.mark.django_db
+def test_archive_endpoint_marks_record_archived_and_audits(
+    client,
+    user_factory,
+    active_config,
+    permissions,
+):
+    from apps.audit.models import AuditEvent
+
+    client.force_login(user_factory("archive-admin", "Product Admin"))
+    record_response = post_json(
+        client,
+        "/api/records/",
+        {
+            "object_type_key": "product",
+            "data": {"commercial_name": "Archive Product", "markets": ["medical"]},
+        },
+    )
+    record_id = record_response.json()["id"]
+
+    response = post_json(client, f"/api/records/{record_id}/archive/", {})
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "archived"
+    assert Record.objects.get(pk=record_id).status == Record.Status.ARCHIVED
+    assert AuditEvent.objects.filter(
+        action="record.archived",
+        object_type="record",
+        object_id=str(record_id),
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_archive_endpoint_requires_admin_permission(client, user_factory, active_config, permissions):
+    client.force_login(user_factory("archive-owner-admin", "Product Admin"))
+    record_response = post_json(
+        client,
+        "/api/records/",
+        {
+            "object_type_key": "product",
+            "data": {"commercial_name": "Protected Archive Product", "markets": ["medical"]},
+        },
+    )
+    record_id = record_response.json()["id"]
+
+    client.force_login(user_factory("archive-engineer", "Engineer"))
+    response = post_json(client, f"/api/records/{record_id}/archive/", {})
+
+    assert response.status_code == 403
+    assert Record.objects.get(pk=record_id).status == Record.Status.DRAFT
+
+
+@pytest.mark.django_db
+def test_versions_endpoint_creates_and_lists_record_snapshots(
+    client,
+    user_factory,
+    active_config,
+    permissions,
+):
+    from apps.records.models import RecordVersion
+
+    client.force_login(user_factory("version-admin", "Product Admin"))
+    record_response = post_json(
+        client,
+        "/api/records/",
+        {
+            "object_type_key": "product",
+            "data": {
+                "commercial_name": "Versioned Product",
+                "category": "film",
+                "markets": ["medical"],
+            },
+        },
+    )
+    record_id = record_response.json()["id"]
+
+    create_response = post_json(
+        client,
+        f"/api/records/{record_id}/versions/",
+        {"change_note": "Initial client-ready version"},
+    )
+    list_response = client.get(f"/api/records/{record_id}/versions/")
+
+    assert create_response.status_code == 201
+    body = create_response.json()
+    assert body["version_number"] == 1
+    assert body["change_note"] == "Initial client-ready version"
+    assert body["snapshot"]["title"] == "Versioned Product"
+    assert body["snapshot"]["data"]["category"] == "film"
+    assert RecordVersion.objects.filter(record_id=record_id, version_number=1).exists()
+    assert list_response.status_code == 200
+    assert list_response.json()["results"][0]["id"] == body["id"]
+
+    update_response = patch_json(
+        client,
+        f"/api/records/{record_id}/",
+        {"data": {"commercial_name": "Versioned Product Updated", "category": "resin"}},
+    )
+    assert update_response.status_code == 200
+
+    version = RecordVersion.objects.get(record_id=record_id, version_number=1)
+    assert version.snapshot["title"] == "Versioned Product"
+    assert version.snapshot["data"]["category"] == "film"
+
+
+@pytest.mark.django_db
 def test_patch_rejects_object_type_key_change(client, user_factory, active_config, permissions):
     client.force_login(user_factory("object-type-engineer", "Engineer"))
     record_response = post_json(

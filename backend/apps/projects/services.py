@@ -77,7 +77,7 @@ def move_task(
 
     task = (
         ProjectTask.objects.select_for_update()
-        .select_related("project__record", "column")
+        .select_related("project__record")
         .get(pk=task.pk)
     )
     if not user_can(actor, "edit", "project", record_id=str(task.project.record_id)):

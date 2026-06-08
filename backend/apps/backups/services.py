@@ -147,7 +147,13 @@ def run_pg_dump(destination: Path):
     env = os.environ.copy()
     if db_config.get("PASSWORD"):
         env["PGPASSWORD"] = str(db_config["PASSWORD"])
-    subprocess.run(command, env=env, check=True)
+    try:
+        subprocess.run(command, env=env, check=True)
+    except FileNotFoundError as exc:
+        raise BackupError("pg_dump executable was not found in the backend runtime.") from exc
+    except subprocess.CalledProcessError as exc:
+        detail = _process_error_detail(exc)
+        raise BackupError(f"pg_dump failed with exit code {exc.returncode}.{detail}") from exc
 
 
 def _generate_backup_id():
@@ -309,3 +315,18 @@ def _ensure_child_path(path: Path, parent: Path):
         raise BackupError(f"Backup path {path} is outside backup root {parent}.") from exc
     if relative_path == Path("."):
         raise BackupError(f"Backup path {path} must be a strict child of backup root {parent}.")
+
+
+def _process_error_detail(error: subprocess.CalledProcessError):
+    output = _decode_process_text(error.stderr) or _decode_process_text(error.stdout)
+    if not output:
+        return ""
+    return f" {output[:500]}"
+
+
+def _decode_process_text(value):
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace").strip()
+    return str(value).strip()

@@ -1,10 +1,10 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Eye, FileText, FileUp, Link as LinkIcon, Rocket } from "lucide-react";
 import { useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 
 import { StatusBadge } from "../../components/StatusBadge";
-import { apiPostForm } from "../../lib/api";
+import { apiGet, apiPostForm } from "../../lib/api";
 
 export type DocumentRevision = {
   id?: string | number;
@@ -42,6 +42,7 @@ export type DocumentUploadMetadata = {
 
 type DocumentPanelProps = {
   documents?: DocumentItem[];
+  emptyMessage?: string;
   isUploading?: boolean;
   ownerRecordId?: string | number;
   onUpload?: (file: File, metadata: DocumentUploadMetadata) => void;
@@ -50,6 +51,7 @@ type DocumentPanelProps = {
 
 export function DocumentPanel({
   documents = [],
+  emptyMessage = "No documents are attached to this record.",
   isUploading = false,
   ownerRecordId,
   onUpload,
@@ -71,7 +73,7 @@ export function DocumentPanel({
         </StatusBadge>
       </div>
       <div className="record-panel-body">
-        {ownerRecordId && (
+        {ownerRecordId && onUpload && (
           <div className="admin-form-grid">
             <label className="field-control">
               <span>Document Type</span>
@@ -91,30 +93,32 @@ export function DocumentPanel({
             </label>
           </div>
         )}
-        <label className="upload-control">
-          <FileUp aria-hidden="true" size={16} />
-          <span>{isUploading ? "Uploading" : selectedFileName || "Upload document"}</span>
-          <input
-            aria-label="Upload document"
-            type="file"
-            disabled={!onUpload || isUploading || !ownerRecordId}
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) {
-                setSelectedFileName(file.name);
-                onUpload?.(file, {
-                  owner_record: ownerRecordId,
-                  title: file.name,
-                  document_type: documentType,
-                  revision_label: revisionLabel
-                });
-              }
-            }}
-          />
-        </label>
+        {onUpload && (
+          <label className="upload-control">
+            <FileUp aria-hidden="true" size={16} />
+            <span>{isUploading ? "Uploading" : selectedFileName || "Upload document"}</span>
+            <input
+              aria-label="Upload document"
+              type="file"
+              disabled={isUploading || !ownerRecordId}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (file) {
+                  setSelectedFileName(file.name);
+                  onUpload(file, {
+                    owner_record: ownerRecordId,
+                    title: file.name,
+                    document_type: documentType,
+                    revision_label: revisionLabel
+                  });
+                }
+              }}
+            />
+          </label>
+        )}
         <div className="document-list" role="list" aria-label="Documents">
           {documents.length === 0 ? (
-            <p className="admin-muted">No documents are attached to this record.</p>
+            <p className="admin-muted">{emptyMessage}</p>
           ) : (
             documents.map((document) => (
               <DocumentListItem
@@ -133,6 +137,10 @@ export function DocumentPanel({
 export function DocumentLibraryPage() {
   const queryClient = useQueryClient();
   const [ownerRecord, setOwnerRecord] = useState("");
+  const documentsQuery = useQuery({
+    queryKey: ["documents"],
+    queryFn: () => apiGet<DocumentItem[]>("/documents/")
+  });
   const uploadDocument = useMutation({
     mutationFn: ({
       file,
@@ -162,9 +170,11 @@ export function DocumentLibraryPage() {
         <div className="panel-heading">
           <div>
             <p className="section-kicker">Create controlled document</p>
-            <h2 id="document-upload-title">Upload to Owner Record</h2>
+            <h2 id="document-upload-title">Document Library</h2>
           </div>
-          <StatusBadge tone="neutral">Create Only</StatusBadge>
+          <StatusBadge tone={documentsQuery.data?.length ? "active" : "neutral"}>
+            {documentsQuery.data?.length ?? 0} Files
+          </StatusBadge>
         </div>
         <div className="record-panel-body">
           <label className="field-control">
@@ -175,7 +185,16 @@ export function DocumentLibraryPage() {
               onChange={(event) => setOwnerRecord(event.target.value)}
             />
           </label>
+          {documentsQuery.isError && (
+            <p className="form-error">
+              {documentsQuery.error instanceof Error
+                ? documentsQuery.error.message
+                : "Unable to load documents."}
+            </p>
+          )}
           <DocumentPanel
+            documents={documentsQuery.data ?? []}
+            emptyMessage="No controlled documents are available."
             ownerRecordId={ownerRecord}
             isUploading={uploadDocument.isPending}
             onUpload={(file, metadata) => uploadDocument.mutate({ file, metadata })}
@@ -188,25 +207,43 @@ export function DocumentLibraryPage() {
 
 export function DocumentDetailPage() {
   const { documentId = "" } = useParams();
+  const documentQuery = useQuery({
+    queryKey: ["document", documentId],
+    queryFn: () => apiGet<DocumentItem>(`/documents/${documentId}/`),
+    enabled: documentId.length > 0
+  });
+  const document = documentQuery.data;
 
   return (
     <div className="page-stack">
       <section className="workspace-header" aria-labelledby="document-detail-title">
         <div>
           <p className="section-kicker">Controlled document</p>
-          <h1 id="document-detail-title">Document {documentId}</h1>
+          <h1 id="document-detail-title">{document?.title ?? `Document ${documentId}`}</h1>
         </div>
       </section>
-      <section className="empty-state">
-        <FileText aria-hidden="true" size={24} />
-        <div>
-          <h2>Document search target</h2>
-          <p>
-            Document list and retrieve endpoints are not available yet. Use the
-            source record to view attached document metadata and revisions.
-          </p>
-        </div>
-      </section>
+      {documentQuery.isLoading ? (
+        <section className="empty-state">
+          <FileText aria-hidden="true" size={24} />
+          <div>
+            <h2>Loading document</h2>
+          </div>
+        </section>
+      ) : documentQuery.isError || !document ? (
+        <section className="empty-state">
+          <FileText aria-hidden="true" size={24} />
+          <div>
+            <h2>Document unavailable</h2>
+            <p>
+              {documentQuery.error instanceof Error
+                ? documentQuery.error.message
+                : "The document could not be loaded."}
+            </p>
+          </div>
+        </section>
+      ) : (
+        <DocumentPanel documents={[document]} emptyMessage="Document metadata is unavailable." />
+      )}
     </div>
   );
 }
@@ -244,7 +281,11 @@ function DocumentListItem({
   return (
     <article className="document-item" role="listitem">
       <div className="document-main">
-        <strong>{document.title ?? document.name ?? document.filename ?? document.id}</strong>
+        <strong>
+          <Link to={`/documents/${document.id}`}>
+            {document.title ?? document.name ?? document.filename ?? document.id}
+          </Link>
+        </strong>
         <span>
           Extraction:{" "}
           {document.extraction_status ?? revision?.extraction_status ?? "not started"}
@@ -253,6 +294,10 @@ function DocumentListItem({
       <StatusBadge tone={status === "released" ? "ready" : "review"}>{status}</StatusBadge>
       <RevisionHistory revisions={revision ? [revision] : document.revisions ?? []} />
       <div className="document-actions">
+        <Link className="button button-secondary" to={`/documents/${document.id}`}>
+          <FileText aria-hidden="true" size={16} />
+          Open
+        </Link>
         <a
           className="button button-secondary"
           href={document.preview_url ?? `/api/documents/${document.id}/preview/`}

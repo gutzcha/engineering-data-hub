@@ -3,7 +3,7 @@ from rest_framework import serializers
 
 from apps.audit.services import record_audit_event
 from apps.records.codes import generate_record_code, validate_code_pattern
-from apps.records.models import Record, RecordObjectTypeLock
+from apps.records.models import Record, RecordObjectTypeLock, RecordVersion
 from apps.records.validation import get_object_type_definition, validate_record_data
 from apps.documents.serializers import DocumentSerializer
 
@@ -140,6 +140,21 @@ class RecordSerializer(serializers.ModelSerializer):
             request=request,
         )
         return record
+
+
+class RecordVersionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RecordVersion
+        fields = [
+            "id",
+            "record",
+            "version_number",
+            "snapshot",
+            "change_note",
+            "created_by",
+            "created_at",
+        ]
+        read_only_fields = fields
 
 
 def _title_from_data(object_type, data, code):

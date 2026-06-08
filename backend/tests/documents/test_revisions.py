@@ -4,7 +4,8 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.db import IntegrityError
+from django.db import IntegrityError, connection
+from django.test.utils import CaptureQueriesContext
 from rest_framework import serializers
 
 from apps.accounts.models import ObjectPermission
@@ -109,6 +110,46 @@ def test_create_document_with_initial_revision_stores_metadata_and_event(
         action="revision_created",
         actor__username="doc-engineer",
     ).exists()
+
+
+@pytest.mark.django_db
+def test_list_and_retrieve_documents_show_visible_metadata_only(
+    client,
+    user_factory,
+    document_permissions,
+    product_record,
+    settings,
+    tmp_path,
+):
+    settings.MEDIA_ROOT = tmp_path
+    client.force_login(user_factory("library-engineer", "Engineer"))
+    created = client.post(
+        "/api/documents/",
+        {
+            "owner_record": str(product_record.pk),
+            "title": "Polycarbonate Data Sheet",
+            "document_type": "tds",
+            "revision_label": "A",
+            "file": upload("pc-tds.txt", b"polycarbonate density tensile"),
+        },
+    ).json()
+
+    client.force_login(user_factory("library-viewer", "Viewer"))
+    list_response = client.get("/api/documents/")
+    assert list_response.status_code == 200
+    assert any(document["id"] == created["id"] for document in list_response.json())
+
+    retrieve_response = client.get(f"/api/documents/{created['id']}/")
+    assert retrieve_response.status_code == 200
+    assert retrieve_response.json()["title"] == "Polycarbonate Data Sheet"
+
+    filtered_response = client.get(f"/api/documents/?owner_record={product_record.pk}")
+    assert filtered_response.status_code == 200
+    assert [document["id"] for document in filtered_response.json()] == [created["id"]]
+
+    client.force_login(user_factory("library-no-access"))
+    assert client.get("/api/documents/").json() == []
+    assert client.get(f"/api/documents/{created['id']}/").status_code == 403
 
 
 @pytest.mark.django_db
@@ -361,6 +402,45 @@ def test_released_revision_is_immutable_and_new_label_is_required(
         action="revision_released",
         actor=approver,
     ).exists()
+
+
+@pytest.mark.django_db
+def test_release_lock_query_does_not_join_nullable_document_relations(
+    client,
+    user_factory,
+    document_permissions,
+    product_record,
+    settings,
+    tmp_path,
+):
+    from apps.documents.views import DocumentViewSet
+
+    settings.MEDIA_ROOT = tmp_path
+    engineer = user_factory("lock-query-engineer", "Engineer")
+    client.force_login(engineer)
+    created = client.post(
+        "/api/documents/",
+        {
+            "owner_record": str(product_record.pk),
+            "title": "Lock Query",
+            "document_type": "specification",
+            "revision_label": "A",
+            "file": upload("lock-query.txt", b"lock me"),
+        },
+    ).json()
+
+    with CaptureQueriesContext(connection) as queries:
+        DocumentViewSet()._lock_document(created["id"])
+
+    document_lock_queries = [
+        query["sql"]
+        for query in queries
+        if 'FROM "documents_document"' in query["sql"]
+        and 'WHERE "documents_document"."id"' in query["sql"]
+    ]
+    assert document_lock_queries
+    assert all('"documents_documentrevision"' not in query for query in document_lock_queries)
+    assert all('"folders_managedfolder"' not in query for query in document_lock_queries)
 
 
 @pytest.mark.django_db

@@ -46,6 +46,33 @@ class DocumentViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
     http_method_names = ["get", "post", "head", "options"]
 
+    def list(self, request):
+        documents = Document.objects.select_related(
+            "owner_record",
+            "current_revision",
+            "folder",
+        ).order_by("-updated_at")
+        owner_record = request.query_params.get("owner_record")
+        if owner_record:
+            documents = documents.filter(owner_record_id=owner_record)
+
+        visible_documents = [
+            document
+            for document in documents
+            if user_can(
+                request.user,
+                "view",
+                document.owner_record.object_type_key,
+                record_id=str(document.owner_record_id),
+            )
+        ]
+        return Response(DocumentSerializer(visible_documents, many=True).data)
+
+    def retrieve(self, request, pk=None):
+        document = self._get_document(pk)
+        self._require_record_permission(request.user, "view", document.owner_record)
+        return Response(DocumentSerializer(document).data)
+
     def create(self, request):
         owner_record = get_object_or_404(Record, pk=request.data.get("owner_record"))
         self._require_record_permission(request.user, "edit", owner_record)
@@ -213,11 +240,7 @@ class DocumentViewSet(viewsets.ViewSet):
 
     def _lock_document(self, pk):
         return get_object_or_404(
-            Document.objects.select_for_update().select_related(
-                "owner_record",
-                "current_revision",
-                "folder",
-            ),
+            Document.objects.select_for_update().select_related("owner_record"),
             pk=pk,
         )
 

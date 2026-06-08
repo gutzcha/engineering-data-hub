@@ -1,7 +1,9 @@
 import pytest
+from django.db import connection
 from django.core.exceptions import ValidationError
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
+from django.test.utils import CaptureQueriesContext
 
 from apps.accounts.models import ObjectPermission, RecordPermission
 from apps.config_registry.seed import starter_configuration_data
@@ -173,6 +175,35 @@ def test_board_groups_tasks_by_columns_and_move_records_event(
         data__from_column=todo.pk,
         data__to_column=doing.pk,
     ).exists()
+
+
+@pytest.mark.django_db
+def test_move_task_lock_query_does_not_join_nullable_column(
+    user_factory,
+    active_project_config,
+    project_permissions,
+):
+    from apps.projects.services import move_task
+
+    ProjectBoardColumn, _ProjectEvent, ProjectTask = project_models()
+    manager = user_factory("move-lock-manager", "Project Manager")
+    project = create_project("Move Lock Project", manager)
+    todo = ProjectBoardColumn.objects.create(project=project, key="todo", title="To Do", sort_order=1)
+    doing = ProjectBoardColumn.objects.create(project=project, key="doing", title="Doing", sort_order=2)
+    task = ProjectTask.objects.create(project=project, column=todo, title="Move lock task")
+
+    with CaptureQueriesContext(connection) as queries:
+        moved = move_task(task=task, column_id=doing.pk, sort_order=0, actor=manager)
+
+    lock_queries = [
+        query["sql"]
+        for query in queries
+        if 'FROM "projects_projecttask"' in query["sql"]
+        and 'WHERE "projects_projecttask"."id"' in query["sql"]
+    ]
+    assert moved.column_id == doing.pk
+    assert lock_queries
+    assert all('"projects_projectboardcolumn"' not in query for query in lock_queries)
 
 
 @pytest.mark.django_db
