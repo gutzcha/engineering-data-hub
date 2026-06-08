@@ -30,6 +30,7 @@ import { FolderReviewInbox } from "../features/folders/FolderReviewInbox";
 import { ImportWizard } from "../features/imports/ImportWizard";
 import { ProjectDetail } from "../features/projects/ProjectDetail";
 import { ProjectList } from "../features/projects/ProjectList";
+import { RecordCreate } from "../features/records/RecordCreate";
 import { RecordDetail } from "../features/records/RecordDetail";
 import { RecordList } from "../features/records/RecordList";
 import { SearchPage } from "../features/search/SearchPage";
@@ -156,10 +157,10 @@ function HomePage() {
             <Download aria-hidden="true" size={16} />
             Export
           </button>
-          <button className="button button-primary" type="button">
+          <Link className="button button-primary" to="/records/new">
             <Plus aria-hidden="true" size={16} />
             New Record
-          </button>
+          </Link>
         </div>
       </section>
 
@@ -332,6 +333,7 @@ export function AppRoutes() {
       <Route path="/" element={<HomePage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/records" element={<RecordList />} />
+      <Route path="/records/new" element={<RecordCreate />} />
       <Route path="/records/:recordId" element={<RecordDetail />} />
       <Route path="/projects" element={<ProjectList />} />
       <Route path="/projects/:projectId" element={<ProjectDetail />} />

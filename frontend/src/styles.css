@@ -242,6 +242,7 @@ select {
   padding: 0 12px;
   font-weight: 700;
   cursor: pointer;
+  text-decoration: none;
 }
 
 .button-primary {

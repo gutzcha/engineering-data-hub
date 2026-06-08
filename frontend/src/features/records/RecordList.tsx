@@ -97,10 +97,10 @@ export function RecordList() {
             <SlidersHorizontal aria-hidden="true" size={16} />
             Configure View
           </button>
-          <button className="button button-primary" type="button">
+          <Link className="button button-primary" to="/records/new">
             <Plus aria-hidden="true" size={16} />
             New Record
-          </button>
+          </Link>
         </div>
       </section>
 
