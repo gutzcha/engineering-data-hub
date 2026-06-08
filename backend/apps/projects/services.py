@@ -13,7 +13,14 @@ from apps.projects.models import (
     ProjectTaskDependency,
 )
 from apps.records.serializers import RecordSerializer
-from apps.search.tasks import enqueue_record_index
+from apps.search.tasks import enqueue_project_index, enqueue_record_index
+
+
+class _Unset:
+    pass
+
+
+_UNSET = _Unset()
 
 
 @transaction.atomic
@@ -35,6 +42,10 @@ def create_project(
         record_data.update(data)
     record_data["project_name"] = name
     record_data.setdefault("project_type", "New Product")
+    if owner:
+        record_data["project_owner"] = owner.pk
+    if target_date:
+        record_data["target_launch_date"] = target_date.isoformat()
 
     serializer = RecordSerializer(
         data={"object_type_key": "project", "data": record_data},
@@ -53,12 +64,65 @@ def create_project(
         created_by=actor,
         updated_by=actor,
     )
+    enqueue_project_index(project.pk)
     record_audit_event(
         actor,
         "project.created",
         project,
         before=None,
         after=_project_snapshot(project),
+    )
+    return project
+
+
+@transaction.atomic
+def update_project(
+    *,
+    project: Project,
+    actor,
+    description=_UNSET,
+    status=_UNSET,
+    owner=_UNSET,
+    start_date=_UNSET,
+    target_date=_UNSET,
+    request=None,
+) -> Project:
+    if not user_can(actor, "edit", "project", record_id=str(project.record_id)):
+        raise PermissionDenied("You do not have permission to edit this project.")
+
+    project = Project.objects.select_for_update().select_related("record").get(pk=project.pk)
+    before = _project_snapshot(project)
+    update_fields = []
+    for field, value in {
+        "description": description,
+        "status": status,
+        "owner": owner,
+        "start_date": start_date,
+        "target_date": target_date,
+    }.items():
+        if value is _UNSET:
+            continue
+        setattr(project, field, value)
+        update_fields.append(field)
+
+    project.updated_by = actor
+    update_fields.extend(["updated_by", "updated_at"])
+    project.save(update_fields=update_fields)
+    _sync_project_record_data(project)
+    enqueue_project_index(project.pk)
+    ProjectEvent.objects.create(
+        project=project,
+        action="project_updated",
+        actor=actor,
+        data={"fields": [field for field in update_fields if field not in {"updated_by", "updated_at"}]},
+    )
+    record_audit_event(
+        actor,
+        "project.updated",
+        project,
+        before=before,
+        after=_project_snapshot(project),
+        request=request,
     )
     return project
 
@@ -215,6 +279,24 @@ def _project_snapshot(project):
             "updated_by_id",
         ],
     )
+
+
+def _sync_project_record_data(project):
+    record = project.record
+    data = dict(record.data or {})
+    data["project_name"] = project.name
+    data.setdefault("project_type", "New Product")
+    if project.owner:
+        data["project_owner"] = project.owner.pk
+    else:
+        data.pop("project_owner", None)
+    if project.target_date:
+        data["target_launch_date"] = project.target_date.isoformat()
+    else:
+        data.pop("target_launch_date", None)
+    record.data = data
+    record.save(update_fields=["data", "updated_at"])
+    enqueue_record_index(record.pk)
 
 
 def _project_task_snapshot(task):

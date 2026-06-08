@@ -160,7 +160,8 @@ describe("App shell", () => {
   });
 
   it("keeps narrow viewports usable without page-level horizontal overflow", () => {
-    expect(styles).not.toMatch(/body\s*{[^}]*min-width\s*:/s);
+    const bodyRule = styles.match(/(?:^|})\s*body\s*{([^}]*)}/s)?.[1] ?? "";
+    expect(bodyRule).not.toMatch(/min-width\s*:/);
     expect(styles).toContain("@media (max-width: 900px)");
     expect(styles).toMatch(/\.app-shell\s*{[^}]*grid-template-columns:\s*1fr/s);
   });

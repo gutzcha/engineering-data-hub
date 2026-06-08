@@ -1,6 +1,6 @@
 # Client Readiness Population Run
 
-Run ID: qa-client-readiness-20260608111323106-grdz8h
+Run ID: qa-client-readiness-20260608133913096-oxm1hm
 
 ## Counts
 
@@ -16,200 +16,200 @@ Run ID: qa-client-readiness-20260608111323106-grdz8h
 {
   "activeConfigVersion": 4,
   "actor": "client_readiness_seed",
-  "dashboardKey": "qa_client_readiness_qa-client-readiness-2026060811132310",
+  "dashboardKey": "qa_client_readiness_qa-client-readiness-2026060813391309",
   "folderEvents": [
     {
-      "id": 105,
-      "path": "QA/QA-CLIENT-READINESS-2026060811132310/ProductDocs/PC_TDS.pdf",
+      "id": 117,
+      "path": "QA/QA-CLIENT-READINESS-2026060813391309/ProductDocs/PC_TDS.pdf",
       "reviewStatus": "pending"
     },
     {
-      "id": 106,
-      "path": "QA/QA-CLIENT-READINESS-2026060811132310/ProductDocs/ABS_COA.pdf",
+      "id": 118,
+      "path": "QA/QA-CLIENT-READINESS-2026060813391309/ProductDocs/ABS_COA.pdf",
       "reviewStatus": "pending"
     },
     {
-      "id": 107,
-      "path": "QA/QA-CLIENT-READINESS-2026060811132310/ProductDocs/duplicate_spec.pdf",
+      "id": 119,
+      "path": "QA/QA-CLIENT-READINESS-2026060813391309/ProductDocs/duplicate_spec.pdf",
       "reviewStatus": "pending"
     },
     {
-      "id": 108,
-      "path": "QA/QA-CLIENT-READINESS-2026060811132310/ProductDocs/supplier_letter.pdf",
+      "id": 120,
+      "path": "QA/QA-CLIENT-READINESS-2026060813391309/ProductDocs/supplier_letter.pdf",
       "reviewStatus": "pending"
     },
     {
-      "id": 109,
-      "path": "QA/QA-CLIENT-READINESS-2026060811132310/ProductDocs/accepted_pp_sheet.pdf",
+      "id": 121,
+      "path": "QA/QA-CLIENT-READINESS-2026060813391309/ProductDocs/accepted_pp_sheet.pdf",
       "reviewStatus": "accepted"
     },
     {
-      "id": 110,
-      "path": "QA/QA-CLIENT-READINESS-2026060811132310/ProductDocs/ignored_legacy_sheet.pdf",
+      "id": 122,
+      "path": "QA/QA-CLIENT-READINESS-2026060813391309/ProductDocs/ignored_legacy_sheet.pdf",
       "reviewStatus": "ignored"
     }
   ],
   "managedFolders": [
     {
-      "id": 1295,
-      "recordId": "c5cd26d0-e7e8-4ebb-821b-c4dcbe49f708",
-      "relativePath": "QA/QA-CLIENT-READINESS-2026060811132310/ProductDocs"
+      "id": 1496,
+      "recordId": "4d273261-bbf9-4a27-a67d-c74fa9949321",
+      "relativePath": "QA/QA-CLIENT-READINESS-2026060813391309/ProductDocs"
     }
   ],
   "projectTasks": [
     {
-      "id": 275,
-      "projectId": "7bcfdbbc-a353-41ab-9bb2-7efbe0350fb0",
+      "id": 307,
+      "projectId": "6dfc8d54-d8fc-4bbe-bdc7-de84d718f464",
       "state": "todo",
       "title": "QA 1 Review resin data sheet"
     },
     {
-      "id": 276,
-      "projectId": "7bcfdbbc-a353-41ab-9bb2-7efbe0350fb0",
+      "id": 308,
+      "projectId": "6dfc8d54-d8fc-4bbe-bdc7-de84d718f464",
       "state": "in_progress",
       "title": "QA 1 Run first article molding pass"
     },
     {
-      "id": 277,
-      "projectId": "7bcfdbbc-a353-41ab-9bb2-7efbe0350fb0",
+      "id": 309,
+      "projectId": "6dfc8d54-d8fc-4bbe-bdc7-de84d718f464",
       "state": "blocked",
       "title": "QA 1 Resolve supplier discrepancy"
     },
     {
-      "id": 278,
-      "projectId": "7bcfdbbc-a353-41ab-9bb2-7efbe0350fb0",
+      "id": 310,
+      "projectId": "6dfc8d54-d8fc-4bbe-bdc7-de84d718f464",
       "state": "done",
       "title": "QA 1 Archive superseded document set"
     },
     {
-      "id": 279,
-      "projectId": "1498a396-5cea-4f27-bb26-b2978c838a2f",
+      "id": 311,
+      "projectId": "de452a2f-81e1-4b11-bcd7-5a20f985b18e",
       "state": "todo",
       "title": "QA 2 Review resin data sheet"
     },
     {
-      "id": 280,
-      "projectId": "1498a396-5cea-4f27-bb26-b2978c838a2f",
+      "id": 312,
+      "projectId": "de452a2f-81e1-4b11-bcd7-5a20f985b18e",
       "state": "in_progress",
       "title": "QA 2 Run first article molding pass"
     },
     {
-      "id": 281,
-      "projectId": "1498a396-5cea-4f27-bb26-b2978c838a2f",
+      "id": 313,
+      "projectId": "de452a2f-81e1-4b11-bcd7-5a20f985b18e",
       "state": "blocked",
       "title": "QA 2 Resolve supplier discrepancy"
     },
     {
-      "id": 282,
-      "projectId": "1498a396-5cea-4f27-bb26-b2978c838a2f",
+      "id": 314,
+      "projectId": "de452a2f-81e1-4b11-bcd7-5a20f985b18e",
       "state": "done",
       "title": "QA 2 Archive superseded document set"
     },
     {
-      "id": 283,
-      "projectId": "1fc7462c-f259-4c9e-9ea4-f015dca4b968",
+      "id": 315,
+      "projectId": "f05eddea-6111-4d59-be59-f7b4394511ff",
       "state": "todo",
       "title": "QA 3 Review resin data sheet"
     },
     {
-      "id": 284,
-      "projectId": "1fc7462c-f259-4c9e-9ea4-f015dca4b968",
+      "id": 316,
+      "projectId": "f05eddea-6111-4d59-be59-f7b4394511ff",
       "state": "in_progress",
       "title": "QA 3 Run first article molding pass"
     },
     {
-      "id": 285,
-      "projectId": "1fc7462c-f259-4c9e-9ea4-f015dca4b968",
+      "id": 317,
+      "projectId": "f05eddea-6111-4d59-be59-f7b4394511ff",
       "state": "blocked",
       "title": "QA 3 Resolve supplier discrepancy"
     },
     {
-      "id": 286,
-      "projectId": "1fc7462c-f259-4c9e-9ea4-f015dca4b968",
+      "id": 318,
+      "projectId": "f05eddea-6111-4d59-be59-f7b4394511ff",
       "state": "done",
       "title": "QA 3 Archive superseded document set"
     },
     {
-      "id": 287,
-      "projectId": "ab9a3ad4-183f-4beb-815b-fffdc8c30782",
+      "id": 319,
+      "projectId": "a61bd044-dc35-485a-8e77-64dc59b5a903",
       "state": "todo",
       "title": "QA 4 Review resin data sheet"
     },
     {
-      "id": 288,
-      "projectId": "ab9a3ad4-183f-4beb-815b-fffdc8c30782",
+      "id": 320,
+      "projectId": "a61bd044-dc35-485a-8e77-64dc59b5a903",
       "state": "in_progress",
       "title": "QA 4 Run first article molding pass"
     },
     {
-      "id": 289,
-      "projectId": "ab9a3ad4-183f-4beb-815b-fffdc8c30782",
+      "id": 321,
+      "projectId": "a61bd044-dc35-485a-8e77-64dc59b5a903",
       "state": "blocked",
       "title": "QA 4 Resolve supplier discrepancy"
     },
     {
-      "id": 290,
-      "projectId": "ab9a3ad4-183f-4beb-815b-fffdc8c30782",
+      "id": 322,
+      "projectId": "a61bd044-dc35-485a-8e77-64dc59b5a903",
       "state": "done",
       "title": "QA 4 Archive superseded document set"
     }
   ],
   "projects": [
     {
-      "id": "7bcfdbbc-a353-41ab-9bb2-7efbe0350fb0",
-      "name": "QA Tooling Transfer QA-CLIENT-READINESS-2026060811132310",
-      "recordId": "2f0ad25a-3bd3-4ada-beba-baa7f1d90eb1"
+      "id": "6dfc8d54-d8fc-4bbe-bdc7-de84d718f464",
+      "name": "QA Tooling Transfer QA-CLIENT-READINESS-2026060813391309",
+      "recordId": "0787a1a6-f6d8-40f7-b4bf-07abac89a50e"
     },
     {
-      "id": "1498a396-5cea-4f27-bb26-b2978c838a2f",
-      "name": "QA Regrind Qualification QA-CLIENT-READINESS-2026060811132310",
-      "recordId": "0577c05e-96c4-4008-ab1d-baa5d3de162a"
+      "id": "de452a2f-81e1-4b11-bcd7-5a20f985b18e",
+      "name": "QA Regrind Qualification QA-CLIENT-READINESS-2026060813391309",
+      "recordId": "8bbcc9ea-8460-4c4c-a878-33a271e0b413"
     },
     {
-      "id": "1fc7462c-f259-4c9e-9ea4-f015dca4b968",
-      "name": "QA Supplier Change QA-CLIENT-READINESS-2026060811132310",
-      "recordId": "b34854b3-1dbb-43de-b353-2c854511bb52"
+      "id": "f05eddea-6111-4d59-be59-f7b4394511ff",
+      "name": "QA Supplier Change QA-CLIENT-READINESS-2026060813391309",
+      "recordId": "9cbaefa7-9a0c-45a2-aeac-de216de2ea7a"
     },
     {
-      "id": "ab9a3ad4-183f-4beb-815b-fffdc8c30782",
-      "name": "QA Document Cleanup QA-CLIENT-READINESS-2026060811132310",
-      "recordId": "24ace4f5-b597-4638-9d7b-e4f025669abd"
+      "id": "a61bd044-dc35-485a-8e77-64dc59b5a903",
+      "name": "QA Document Cleanup QA-CLIENT-READINESS-2026060813391309",
+      "recordId": "574a7caf-b9b3-41e1-a348-0bd81c7a484f"
     }
   ],
   "records": {
-    "productRecordId": "c5cd26d0-e7e8-4ebb-821b-c4dcbe49f708",
+    "productRecordId": "4d273261-bbf9-4a27-a67d-c74fa9949321",
     "projectRecordIds": [
-      "2f0ad25a-3bd3-4ada-beba-baa7f1d90eb1",
-      "0577c05e-96c4-4008-ab1d-baa5d3de162a",
-      "b34854b3-1dbb-43de-b353-2c854511bb52",
-      "24ace4f5-b597-4638-9d7b-e4f025669abd"
+      "0787a1a6-f6d8-40f7-b4bf-07abac89a50e",
+      "8bbcc9ea-8460-4c4c-a878-33a271e0b413",
+      "9cbaefa7-9a0c-45a2-aeac-de216de2ea7a",
+      "574a7caf-b9b3-41e1-a348-0bd81c7a484f"
     ]
   },
-  "runId": "qa-client-readiness-20260608111323106-grdz8h",
+  "runId": "qa-client-readiness-20260608133913096-oxm1hm",
   "workflowTasks": [
     {
-      "id": 154,
-      "relatedRecordId": "c5cd26d0-e7e8-4ebb-821b-c4dcbe49f708",
+      "id": 168,
+      "relatedRecordId": "4d273261-bbf9-4a27-a67d-c74fa9949321",
       "state": "open",
-      "title": "QA Review material data QA-CLIENT-READINESS-2026060811132310"
+      "title": "QA Review material data QA-CLIENT-READINESS-2026060813391309"
     },
     {
-      "id": 155,
-      "relatedRecordId": "c5cd26d0-e7e8-4ebb-821b-c4dcbe49f708",
+      "id": 169,
+      "relatedRecordId": "4d273261-bbf9-4a27-a67d-c74fa9949321",
       "state": "open",
-      "title": "QA Approve supplier dossier QA-CLIENT-READINESS-2026060811132310"
+      "title": "QA Approve supplier dossier QA-CLIENT-READINESS-2026060813391309"
     },
     {
-      "id": 156,
-      "relatedRecordId": "c5cd26d0-e7e8-4ebb-821b-c4dcbe49f708",
+      "id": 170,
+      "relatedRecordId": "4d273261-bbf9-4a27-a67d-c74fa9949321",
       "state": "open",
-      "title": "QA Release controlled document QA-CLIENT-READINESS-2026060811132310"
+      "title": "QA Release controlled document QA-CLIENT-READINESS-2026060813391309"
     },
     {
-      "id": 157,
-      "relatedRecordId": "c5cd26d0-e7e8-4ebb-821b-c4dcbe49f708",
+      "id": 171,
+      "relatedRecordId": "4d273261-bbf9-4a27-a67d-c74fa9949321",
       "state": "open",
-      "title": "QA Check regrind declaration QA-CLIENT-READINESS-2026060811132310"
+      "title": "QA Check regrind declaration QA-CLIENT-READINESS-2026060813391309"
     }
   ]
 }
@@ -244,23 +244,23 @@ Run ID: qa-client-readiness-20260608111323106-grdz8h
 
 | # | Document ID | Title | Extraction |
 |---|---|---|---|
-| 1 | 409 | Plastic-Craft Polycarbonate SDS qa-client-readiness-20260608111323106-grdz8h | extracted |
-| 2 | 410 | Plastic-Craft Polystyrene SDS qa-client-readiness-20260608111323106-grdz8h | extracted |
-| 3 | 411 | ACRIFIX 2R 0190 SDS qa-client-readiness-20260608111323106-grdz8h | extracted |
-| 4 | 412 | ACRIFIX 2R 0190 Technical Information qa-client-readiness-20260608111323106-grdz8h | extracted |
-| 5 | 413 | ACRIFIX AC 1010 SDS qa-client-readiness-20260608111323106-grdz8h | extracted |
-| 6 | 414 | Primex ABS Data Sheet qa-client-readiness-20260608111323106-grdz8h | unsupported |
-| 7 | 415 | Acetal Technical Data qa-client-readiness-20260608111323106-grdz8h | extracted |
-| 8 | 416 | HDPE Typical Properties qa-client-readiness-20260608111323106-grdz8h | extracted |
-| 9 | 417 | High Impact Polystyrene Technical Data qa-client-readiness-20260608111323106-grdz8h | extracted |
-| 10 | 418 | Polycarbonate AR Data Sheet qa-client-readiness-20260608111323106-grdz8h | extracted |
-| 11 | 419 | Polycarbonate Physical Properties qa-client-readiness-20260608111323106-grdz8h | extracted |
-| 12 | 420 | Polycarbonate GP Product Data qa-client-readiness-20260608111323106-grdz8h | extracted |
-| 13 | 421 | King CuttingBoard Physical Properties qa-client-readiness-20260608111323106-grdz8h | extracted |
-| 14 | 422 | King KPC HDPE Literature qa-client-readiness-20260608111323106-grdz8h | extracted |
-| 15 | 423 | Komatex Foamed PVC Technical Values qa-client-readiness-20260608111323106-grdz8h | extracted |
-| 16 | 424 | PVC Sheets Data qa-client-readiness-20260608111323106-grdz8h | extracted |
-| 17 | 425 | Polypropylene Data qa-client-readiness-20260608111323106-grdz8h | unsupported |
-| 18 | 426 | Vintec PVC Properties qa-client-readiness-20260608111323106-grdz8h | extracted |
-| 19 | 427 | SCIGRIP 4SC Technical Data qa-client-readiness-20260608111323106-grdz8h | extracted |
-| 20 | 428 | Weld-On 4 Technical Data qa-client-readiness-20260608111323106-grdz8h | extracted |
+| 1 | 465 | Plastic-Craft Polycarbonate SDS qa-client-readiness-20260608133913096-oxm1hm | extracted |
+| 2 | 466 | Plastic-Craft Polystyrene SDS qa-client-readiness-20260608133913096-oxm1hm | extracted |
+| 3 | 467 | ACRIFIX 2R 0190 SDS qa-client-readiness-20260608133913096-oxm1hm | extracted |
+| 4 | 468 | ACRIFIX 2R 0190 Technical Information qa-client-readiness-20260608133913096-oxm1hm | extracted |
+| 5 | 469 | ACRIFIX AC 1010 SDS qa-client-readiness-20260608133913096-oxm1hm | extracted |
+| 6 | 470 | Primex ABS Data Sheet qa-client-readiness-20260608133913096-oxm1hm | unsupported |
+| 7 | 471 | Acetal Technical Data qa-client-readiness-20260608133913096-oxm1hm | extracted |
+| 8 | 472 | HDPE Typical Properties qa-client-readiness-20260608133913096-oxm1hm | extracted |
+| 9 | 473 | High Impact Polystyrene Technical Data qa-client-readiness-20260608133913096-oxm1hm | extracted |
+| 10 | 474 | Polycarbonate AR Data Sheet qa-client-readiness-20260608133913096-oxm1hm | extracted |
+| 11 | 475 | Polycarbonate Physical Properties qa-client-readiness-20260608133913096-oxm1hm | extracted |
+| 12 | 476 | Polycarbonate GP Product Data qa-client-readiness-20260608133913096-oxm1hm | extracted |
+| 13 | 477 | King CuttingBoard Physical Properties qa-client-readiness-20260608133913096-oxm1hm | extracted |
+| 14 | 478 | King KPC HDPE Literature qa-client-readiness-20260608133913096-oxm1hm | extracted |
+| 15 | 479 | Komatex Foamed PVC Technical Values qa-client-readiness-20260608133913096-oxm1hm | extracted |
+| 16 | 480 | PVC Sheets Data qa-client-readiness-20260608133913096-oxm1hm | extracted |
+| 17 | 481 | Polypropylene Data qa-client-readiness-20260608133913096-oxm1hm | unsupported |
+| 18 | 482 | Vintec PVC Properties qa-client-readiness-20260608133913096-oxm1hm | extracted |
+| 19 | 483 | SCIGRIP 4SC Technical Data qa-client-readiness-20260608133913096-oxm1hm | extracted |
+| 20 | 484 | Weld-On 4 Technical Data qa-client-readiness-20260608133913096-oxm1hm | extracted |

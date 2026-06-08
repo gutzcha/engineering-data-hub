@@ -256,7 +256,16 @@ export function DashboardPage() {
             id: column,
             header: humanize(column),
             accessorFn: (row: SavedViewResultRow) => valueForColumn(row, column),
-            cell: ({ getValue }) => formatCell(getValue())
+            cell: ({ row, getValue }) => {
+              const value = formatCell(getValue());
+              return row.original.id ? (
+                <Link className="text-link" to={`/records/${row.original.id}`}>
+                  {value}
+                </Link>
+              ) : (
+                value
+              );
+            }
           }))}
         />
       </section>
@@ -281,7 +290,7 @@ function DashboardWidgetPanel({ widget }: { widget: DashboardWidget }) {
           <p className="admin-muted">No widget data returned.</p>
         ) : (
           items.map((item, index) => (
-            <WidgetItem item={item} key={String(item.id ?? item.key ?? index)} />
+            <WidgetItem item={item} widget={widget} key={String(item.id ?? item.key ?? index)} />
           ))
         )}
       </div>
@@ -289,18 +298,18 @@ function DashboardWidgetPanel({ widget }: { widget: DashboardWidget }) {
   );
 }
 
-function WidgetItem({ item }: { item: DashboardWidgetItem }) {
+function WidgetItem({ item, widget }: { item: DashboardWidgetItem; widget: DashboardWidget }) {
   const title =
     item.title ??
     item.name ??
-    item.key ??
+    (item.key ? humanize(String(item.key)) : undefined) ??
     item.action ??
     item.code ??
     item.object_type ??
     item.id ??
     "Item";
   const count = item.count;
-  const href = recordHref(item);
+  const href = widgetHref(widget, item);
 
   const content = (
     <>
@@ -327,14 +336,80 @@ function WidgetItem({ item }: { item: DashboardWidgetItem }) {
   );
 }
 
-function recordHref(item: DashboardWidgetItem) {
+function widgetHref(widget: DashboardWidget, item: DashboardWidgetItem) {
   if (item.record_id) {
     return `/records/${String(item.record_id)}`;
   }
-  if (item.object_type === "record" && item.object_id) {
-    return `/records/${String(item.object_id)}`;
+
+  if (item.project_id) {
+    return `/projects/${String(item.project_id)}`;
   }
+
+  if (item.object_type && item.object_id) {
+    const objectType = String(item.object_type).toLowerCase();
+    const objectId = String(item.object_id);
+    if (objectType === "record") {
+      return `/records/${objectId}`;
+    }
+    if (objectType === "document") {
+      return `/documents/${objectId}`;
+    }
+    if (objectType === "project") {
+      return `/projects/${objectId}`;
+    }
+    if (objectType === "folderchangeevent" || objectType === "folder_event") {
+      return `/tasks/folder-events/${objectId}`;
+    }
+  }
+
+  if (widget.widget_type === "count_by_status" && item.key) {
+    const objectTypeKey = scopedObjectTypeKey(widget);
+    return recordListHref({
+      ...(objectTypeKey ? { object_type_key: objectTypeKey } : {}),
+      status: String(item.key)
+    });
+  }
+
+  if (widget.widget_type === "count_by_object_type" && item.key) {
+    return recordListHref({ object_type_key: String(item.key) });
+  }
+
+  if (widget.widget_type === "workflow_bottlenecks" && item.key) {
+    return `/tasks?task_key=${encodeURIComponent(String(item.key))}`;
+  }
+
   return undefined;
+}
+
+function scopedObjectTypeKey(widget: DashboardWidget) {
+  const filters = Array.isArray(widget.config?.filters) ? widget.config.filters : [];
+  for (const filter of filters) {
+    if (!filter || typeof filter !== "object") {
+      continue;
+    }
+    const filterRecord = filter as Record<string, unknown>;
+    const filterType = filterRecord.type ?? filterRecord.filter;
+    if (filterType !== "object_type") {
+      continue;
+    }
+
+    const values = Array.isArray(filterRecord.values) ? filterRecord.values : [];
+    if (values.length === 1 && typeof values[0] === "string") {
+      return values[0];
+    }
+
+    const value = filterRecord.value ?? filterRecord.object_type_key;
+    if (typeof value === "string") {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
+function recordListHref(params: Record<string, string>) {
+  const query = new URLSearchParams(params);
+  return `/records?${query.toString()}`;
 }
 
 function widgetSubtitle(item: DashboardWidgetItem) {

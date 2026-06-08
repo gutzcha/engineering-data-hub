@@ -1,10 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Download, Eye, FileText, FileUp, Link as LinkIcon, Rocket } from "lucide-react";
+import { Archive, Download, Eye, FileText, FileUp, Link as LinkIcon, Rocket } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { StatusBadge } from "../../components/StatusBadge";
-import { apiGet, apiPostForm } from "../../lib/api";
+import { apiGet, apiPost, apiPostForm } from "../../lib/api";
 
 export type DocumentRevision = {
   id?: string | number;
@@ -74,6 +74,7 @@ type DocumentPanelProps = {
   ownerRecordId?: string | number;
   onUpload?: (file: File, metadata: DocumentUploadMetadata) => void;
   onRelease?: (documentId: string | number, revisionId: string | number) => void;
+  onArchive?: (documentId: string | number) => void;
 };
 
 export function DocumentPanel({
@@ -82,7 +83,8 @@ export function DocumentPanel({
   isUploading = false,
   ownerRecordId,
   onUpload,
-  onRelease
+  onRelease,
+  onArchive
 }: DocumentPanelProps) {
   const [selectedFileName, setSelectedFileName] = useState("");
   const [documentType, setDocumentType] = useState("specification");
@@ -151,6 +153,7 @@ export function DocumentPanel({
               <DocumentListItem
                 document={document}
                 key={document.id}
+                onArchive={onArchive}
                 onRelease={onRelease}
               />
             ))
@@ -244,6 +247,7 @@ export function DocumentDetailPage() {
   const [revisionLabel, setRevisionLabel] = useState("");
   const [revisionFile, setRevisionFile] = useState<File | null>(null);
   const [revisionNotice, setRevisionNotice] = useState("");
+  const [archiveNotice, setArchiveNotice] = useState("");
   const documentQuery = useQuery({
     queryKey: ["document", documentId],
     queryFn: () => apiGet<DocumentItem>(`/documents/${documentId}/`),
@@ -271,8 +275,21 @@ export function DocumentDetailPage() {
       setRevisionNotice(
         `Revision ${revision.revision_label ?? revision.version ?? revision.id ?? ""} uploaded.`.trim()
       );
+      queryClient.setQueryData<DocumentItem | undefined>(
+        ["document", documentId],
+        (current) => (current ? documentWithRevision(current, revision) : current)
+      );
       void queryClient.invalidateQueries({ queryKey: ["document", documentId] });
       void queryClient.invalidateQueries({ queryKey: ["documents"] });
+    }
+  });
+  const archiveDocument = useMutation({
+    mutationFn: () => apiPost<DocumentItem>(`/documents/${documentId}/archive/`, {}),
+    onSuccess: (updatedDocument) => {
+      setArchiveNotice("Document archived. It remains available for audit and history.");
+      queryClient.setQueryData(["document", documentId], updatedDocument);
+      void queryClient.invalidateQueries({ queryKey: ["documents"] });
+      void queryClient.invalidateQueries({ queryKey: ["document", documentId, "audit"] });
     }
   });
   const document = documentQuery.data;
@@ -313,10 +330,25 @@ export function DocumentDetailPage() {
           </div>
         </section>
       ) : (
-        <DocumentPanel documents={[document]} emptyMessage="Document metadata is unavailable." />
+        <DocumentPanel
+          documents={[document]}
+          emptyMessage="Document metadata is unavailable."
+          onArchive={() => archiveDocument.mutate()}
+        />
       )}
       {document && (
         <>
+          {archiveNotice && (
+            <div className="validation-success" role="status">
+              {archiveNotice}
+            </div>
+          )}
+          {archiveDocument.error && (
+            <div className="admin-alert" role="alert">
+              <strong>Document archive failed</strong>
+              <span>{errorMessage(archiveDocument.error)}</span>
+            </div>
+          )}
           <section className="filter-panel" aria-label="Document detail views">
             <div className="segmented-tabs" role="tablist" aria-label="Document views">
               <Link
@@ -419,9 +451,11 @@ export function buildDocumentRevisionForm(file: File, revisionLabel: string) {
 
 function DocumentListItem({
   document,
+  onArchive,
   onRelease
 }: {
   document: DocumentItem;
+  onArchive?: (documentId: string | number) => void;
   onRelease?: (documentId: string | number, revisionId: string | number) => void;
 }) {
   const revision = currentRevision(document);
@@ -441,7 +475,7 @@ function DocumentListItem({
         </span>
       </div>
       <StatusBadge tone={status === "released" ? "ready" : "review"}>{status}</StatusBadge>
-      <RevisionHistory revisions={revision ? [revision] : document.revisions ?? []} />
+      <RevisionHistory revisions={revisionsForHistory(document)} />
       <div className="document-actions">
         <Link className="button button-secondary" to={`/documents/${document.id}`}>
           <FileText aria-hidden="true" size={16} />
@@ -470,6 +504,16 @@ function DocumentListItem({
         >
           <Rocket aria-hidden="true" size={16} />
           Release
+        </button>
+        <button
+          aria-label="Archive Document"
+          className="button button-secondary"
+          type="button"
+          onClick={() => onArchive?.(document.id)}
+          disabled={!onArchive || status === "obsolete"}
+        >
+          <Archive aria-hidden="true" size={16} />
+          Archive
         </button>
         <Link
           className="button button-secondary"
@@ -675,6 +719,42 @@ function RevisionHistory({ revisions }: { revisions: DocumentRevision[] }) {
 
 function currentRevision(document: DocumentItem) {
   return document.current_revision ?? document.revisions?.[0] ?? null;
+}
+
+function revisionsForHistory(document: DocumentItem) {
+  if (document.revisions?.length) {
+    return document.revisions;
+  }
+  const revision = currentRevision(document);
+  return revision ? [revision] : [];
+}
+
+function documentWithRevision(document: DocumentItem, revision: DocumentRevision): DocumentItem {
+  return {
+    ...document,
+    revisions: upsertRevision(revisionsForHistory(document), revision)
+  };
+}
+
+function upsertRevision(revisions: DocumentRevision[], revision: DocumentRevision) {
+  const revisionId = revision.id ? String(revision.id) : "";
+  const revisionLabel = revision.revision_label ?? revision.version;
+  const existingIndex = revisions.findIndex((existingRevision) => {
+    if (revisionId && existingRevision.id && String(existingRevision.id) === revisionId) {
+      return true;
+    }
+    return (
+      revisionLabel !== undefined &&
+      (existingRevision.revision_label ?? existingRevision.version) === revisionLabel
+    );
+  });
+
+  if (existingIndex >= 0) {
+    return revisions.map((existingRevision, index) =>
+      index === existingIndex ? revision : existingRevision
+    );
+  }
+  return [...revisions, revision];
 }
 
 function formatDate(value?: string) {

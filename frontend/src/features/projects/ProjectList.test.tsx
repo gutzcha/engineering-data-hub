@@ -99,4 +99,53 @@ describe("ProjectList", () => {
     );
     expect(screen.getByText("3 open / 5 total")).toBeInTheDocument();
   });
+
+  it("creates a new project from the project workspace", async () => {
+    const projects: Array<Record<string, unknown>> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (input.toString() === "/api/projects/" && (!init?.method || init.method === "GET")) {
+          return Response.json(projects);
+        }
+
+        if (input.toString() === "/api/projects/" && init?.method === "POST") {
+          const body = JSON.parse(String(init.body));
+          const created = {
+            id: "550e8400-e29b-41d4-a716-446655440001",
+            record: "record-2",
+            name: body.name,
+            description: body.description,
+            status: "planning",
+            owner: Number(body.owner),
+            owner_username: "qa_owner",
+            task_count: 0,
+            open_tasks: 0,
+            updated_at: "2026-06-08T10:00:00Z"
+          };
+          projects.push(created);
+          return Response.json(created, { status: 201 });
+        }
+
+        if (input.toString() === "/api/projects/workload/") {
+          return Response.json([]);
+        }
+
+        return Response.json({ detail: `Unexpected request ${input.toString()}` }, { status: 500 });
+      })
+    );
+
+    const user = userEvent.setup();
+    renderProjectList();
+
+    await user.type(await screen.findByLabelText(/project name/i), "Operator Project");
+    await user.type(screen.getByLabelText(/^description$/i), "Created from UI");
+    await user.type(screen.getByLabelText(/owner user id/i), "7");
+    await user.click(screen.getByRole("button", { name: /create project/i }));
+
+    expect(await screen.findByRole("link", { name: /operator project/i })).toHaveAttribute(
+      "href",
+      "/projects/550e8400-e29b-41d4-a716-446655440001"
+    );
+  });
 });

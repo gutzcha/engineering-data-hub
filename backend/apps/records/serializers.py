@@ -5,11 +5,11 @@ from apps.audit.services import record_audit_event
 from apps.records.codes import generate_record_code, validate_code_pattern
 from apps.records.models import Record, RecordObjectTypeLock, RecordVersion
 from apps.records.validation import get_object_type_definition, validate_record_data
-from apps.documents.serializers import DocumentSerializer
+from apps.documents.serializers import DocumentSummarySerializer
 
 
 class RecordSerializer(serializers.ModelSerializer):
-    documents = DocumentSerializer(many=True, read_only=True)
+    documents = DocumentSummarySerializer(many=True, read_only=True)
 
     class Meta:
         model = Record

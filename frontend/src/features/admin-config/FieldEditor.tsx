@@ -1,9 +1,12 @@
+import { Trash2 } from "lucide-react";
+
 import type { FieldDefinition } from "./ConfigWorkspace";
 
 type FieldEditorProps = {
   field: FieldDefinition;
   readOnly: boolean;
   onChange: (field: FieldDefinition) => void;
+  onRemove: () => void;
 };
 
 const fieldTypes = [
@@ -20,7 +23,7 @@ const fieldTypes = [
   "user_ref"
 ];
 
-export function FieldEditor({ field, readOnly, onChange }: FieldEditorProps) {
+export function FieldEditor({ field, readOnly, onChange, onRemove }: FieldEditorProps) {
   function updateField<Key extends keyof FieldDefinition>(
     key: Key,
     value: FieldDefinition[Key]
@@ -29,7 +32,7 @@ export function FieldEditor({ field, readOnly, onChange }: FieldEditorProps) {
   }
 
   return (
-    <article className="field-editor">
+    <article className="field-editor" aria-label={`${field.label || field.key || "Unnamed"} field`}>
       <div className="field-editor-main">
         <label className="field-control">
           <span>Field key</span>
@@ -61,6 +64,15 @@ export function FieldEditor({ field, readOnly, onChange }: FieldEditorProps) {
             ))}
           </select>
         </label>
+        <button
+          className="button button-secondary"
+          type="button"
+          onClick={onRemove}
+          disabled={readOnly}
+        >
+          <Trash2 aria-hidden="true" size={14} />
+          Remove Field
+        </button>
       </div>
 
       <div className="toggle-row" aria-label={`${field.label} field controls`}>

@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, ClipboardCheck, Loader2, SlidersHorizontal } from "lucide-react";
-import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { CheckCircle2, ClipboardCheck, Loader2, Plus, SlidersHorizontal } from "lucide-react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 
 import { DataTable } from "../../components/DataTable";
 import { StatusBadge } from "../../components/StatusBadge";
@@ -30,6 +30,7 @@ export type WorkflowTask = {
   related_document?: string | number | { id?: string | number; title?: string } | null;
   related_project?: string | number | { id?: string | number; title?: string } | null;
   record?: string | number | { id?: string | number; code?: string; title?: string } | null;
+  key?: string;
   transition_key?: string;
   transition_label?: string;
   created_at?: string;
@@ -53,17 +54,43 @@ type TaskInboxProps = {
   currentRoles?: string[];
 };
 
+type NewTaskDraft = {
+  title: string;
+  description: string;
+  relatedRecord: string;
+  assigneeUser: string;
+  dueDate: string;
+};
+
 export function TaskInbox({
   currentUser = "me",
   currentUserId,
   currentRoles = ["Engineering", "Quality", "Approver"]
 }: TaskInboxProps) {
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
+  const urlTaskKey = searchParams.get("task_key") ?? "";
   const [assignment, setAssignment] = useState<AssignmentFilter>("all");
-  const [due, setDue] = useState<DueFilter>("all");
+  const [due, setDue] = useState<DueFilter>(() =>
+    searchParams.get("due") === "overdue" ? "overdue" : "all"
+  );
   const [objectType, setObjectType] = useState("all");
   const [state, setState] = useState("all");
   const [query, setQuery] = useState("");
+  const [showNewTask, setShowNewTask] = useState(false);
+  const [taskCreateNotice, setTaskCreateNotice] = useState("");
+  const [newTask, setNewTask] = useState<NewTaskDraft>({
+    title: "",
+    description: "",
+    relatedRecord: "",
+    assigneeUser: "",
+    dueDate: ""
+  });
+  const urlDue = searchParams.get("due") === "overdue" ? "overdue" : "all";
+
+  useEffect(() => {
+    setDue(urlDue);
+  }, [urlDue]);
 
   const tasksQuery = useQuery({
     queryKey: ["workflow-tasks", "open"],
@@ -79,6 +106,27 @@ export function TaskInbox({
     mutationFn: (taskId: string | number) =>
       apiPost<WorkflowTask>(`/workflow-tasks/${taskId}/complete/`, {}),
     onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["workflow-tasks", "open"] });
+    }
+  });
+  const createTask = useMutation({
+    mutationFn: (draft: NewTaskDraft) =>
+      apiPost<WorkflowTask>("/workflow-tasks/", {
+        title: draft.title.trim(),
+        description: draft.description.trim(),
+        related_record: draft.relatedRecord.trim(),
+        assignee_user: draft.assigneeUser.trim() ? Number(draft.assigneeUser.trim()) : null,
+        due_date: draft.dueDate ? `${draft.dueDate}T09:00:00Z` : null
+      }),
+    onSuccess: (createdTask) => {
+      setTaskCreateNotice(`Task created: ${taskTitle(createdTask)}`);
+      setNewTask({
+        title: "",
+        description: "",
+        relatedRecord: "",
+        assigneeUser: "",
+        dueDate: ""
+      });
       void queryClient.invalidateQueries({ queryKey: ["workflow-tasks", "open"] });
     }
   });
@@ -113,8 +161,13 @@ export function TaskInbox({
           return false;
         }
 
+        if (urlTaskKey && taskKey(task) !== urlTaskKey) {
+          return false;
+        }
+
         const searchable = [
           taskTitle(task),
+          taskKey(task),
           taskObjectType(task),
           taskState(task),
           assigneeName(task),
@@ -125,8 +178,27 @@ export function TaskInbox({
 
         return searchable.includes(query.trim().toLowerCase());
       }),
-    [assignment, due, effectiveRoles, effectiveUserId, effectiveUserName, objectType, query, state, tasks]
+    [
+      assignment,
+      due,
+      effectiveRoles,
+      effectiveUserId,
+      effectiveUserName,
+      objectType,
+      query,
+      state,
+      tasks,
+      urlTaskKey
+    ]
   );
+
+  function submitNewTask(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setTaskCreateNotice("");
+    if (newTask.title.trim() && newTask.relatedRecord.trim()) {
+      createTask.mutate(newTask);
+    }
+  }
 
   return (
     <div className="page-stack workflow-page">
@@ -135,10 +207,97 @@ export function TaskInbox({
           <p className="section-kicker">Review queues and assignments</p>
           <h1 id="task-inbox-title">Task Inbox</h1>
         </div>
-        <StatusBadge tone={filteredTasks.length ? "review" : "ready"}>
-          {tasksQuery.isLoading ? "Loading" : `${filteredTasks.length} Tasks`}
-        </StatusBadge>
+        <div className="header-actions">
+          <button
+            className="button button-secondary"
+            type="button"
+            onClick={() => setShowNewTask((visible) => !visible)}
+          >
+            <Plus aria-hidden="true" size={16} />
+            New Task
+          </button>
+          <StatusBadge tone={filteredTasks.length ? "review" : "ready"}>
+            {tasksQuery.isLoading ? "Loading" : `${filteredTasks.length} Tasks`}
+          </StatusBadge>
+        </div>
       </section>
+
+      {showNewTask && (
+        <section className="table-panel detail-panel" aria-labelledby="new-task-title">
+          <div className="panel-heading">
+            <div>
+              <p className="section-kicker">Operator issue</p>
+              <h2 id="new-task-title">New Task</h2>
+            </div>
+            <ClipboardCheck aria-hidden="true" size={18} />
+          </div>
+          <form className="record-panel-body admin-form-grid" onSubmit={submitNewTask}>
+            {taskCreateNotice && (
+              <div className="validation-success field-control-wide" role="status">
+                {taskCreateNotice}
+              </div>
+            )}
+            {createTask.error && (
+              <div className="admin-alert field-control-wide" role="alert">
+                <strong>Task was not created</strong>
+                <span>{errorMessage(createTask.error)}</span>
+              </div>
+            )}
+            <label className="field-control">
+              <span>Task Title</span>
+              <input
+                aria-label="Task Title"
+                value={newTask.title}
+                onChange={(event) => setNewTask({ ...newTask, title: event.target.value })}
+              />
+            </label>
+            <label className="field-control">
+              <span>Related Record ID</span>
+              <input
+                aria-label="Related Record ID"
+                value={newTask.relatedRecord}
+                onChange={(event) => setNewTask({ ...newTask, relatedRecord: event.target.value })}
+              />
+            </label>
+            <label className="field-control">
+              <span>Assignee User ID</span>
+              <input
+                aria-label="Task Assignee User ID"
+                inputMode="numeric"
+                type="number"
+                value={newTask.assigneeUser}
+                onChange={(event) => setNewTask({ ...newTask, assigneeUser: event.target.value })}
+              />
+            </label>
+            <label className="field-control">
+              <span>Due Date</span>
+              <input
+                aria-label="Task Due Date"
+                type="date"
+                value={newTask.dueDate}
+                onChange={(event) => setNewTask({ ...newTask, dueDate: event.target.value })}
+              />
+            </label>
+            <label className="field-control field-control-wide">
+              <span>Description</span>
+              <textarea
+                aria-label="Task Description"
+                rows={3}
+                value={newTask.description}
+                onChange={(event) => setNewTask({ ...newTask, description: event.target.value })}
+              />
+            </label>
+            <button
+              className="button button-primary"
+              type="submit"
+              disabled={createTask.isPending || !newTask.title.trim() || !newTask.relatedRecord.trim()}
+            >
+              <Plus aria-hidden="true" size={16} />
+              {createTask.isPending ? "Creating" : "Create Task"}
+            </button>
+          </form>
+        </section>
+      )}
 
       <section className="filter-panel" aria-label="Task inbox filters">
         <div className="search-form">
@@ -312,6 +471,10 @@ function taskSubtitle(task: WorkflowTask) {
 
 function taskState(task: WorkflowTask) {
   return task.state ?? task.status ?? "open";
+}
+
+function taskKey(task: WorkflowTask) {
+  return task.key ?? task.transition_key ?? "";
 }
 
 function taskObjectType(task: WorkflowTask) {

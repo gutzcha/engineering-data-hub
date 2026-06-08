@@ -1,16 +1,22 @@
+import { Plus } from "lucide-react";
+
 import type { ObjectTypeDefinition } from "./ConfigWorkspace";
 import { FieldEditor } from "./FieldEditor";
 
 type ObjectTypeEditorProps = {
   objectType: ObjectTypeDefinition;
   readOnly: boolean;
+  onAddField: () => void;
   onChange: (objectType: ObjectTypeDefinition) => void;
+  onRemoveField: (fieldKey: string) => void;
 };
 
 export function ObjectTypeEditor({
   objectType,
   readOnly,
-  onChange
+  onAddField,
+  onChange,
+  onRemoveField
 }: ObjectTypeEditorProps) {
   function updateField<Key extends keyof ObjectTypeDefinition>(
     key: Key,
@@ -26,6 +32,15 @@ export function ObjectTypeEditor({
           <p className="section-kicker">Object type and fields</p>
           <h2 id="object-type-title">Object Type Editor</h2>
         </div>
+        <button
+          className="button button-secondary"
+          type="button"
+          onClick={onAddField}
+          disabled={readOnly}
+        >
+          <Plus aria-hidden="true" size={16} />
+          Add Field
+        </button>
       </div>
       <div className="admin-panel-body editor-stack">
         <div className="admin-form-grid">
@@ -74,7 +89,7 @@ export function ObjectTypeEditor({
         <div className="field-list" aria-label="Field list">
           {objectType.fields.map((field, index) => (
             <FieldEditor
-              key={field.key || index}
+              key={index}
               field={field}
               readOnly={readOnly}
               onChange={(updatedField) => {
@@ -82,6 +97,7 @@ export function ObjectTypeEditor({
                 fields[index] = updatedField;
                 updateField("fields", fields);
               }}
+              onRemove={() => onRemoveField(field.key)}
             />
           ))}
         </div>

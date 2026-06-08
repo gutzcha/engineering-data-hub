@@ -2,7 +2,10 @@ from django.urls import path
 
 from apps.projects.views import (
     ProjectBoardView,
+    ProjectDetailView,
+    ProjectEventsView,
     ProjectListView,
+    ProjectTaskDetailView,
     ProjectTaskDependencyView,
     ProjectTaskMoveView,
     ProjectTimelineView,
@@ -12,11 +15,18 @@ from apps.projects.views import (
 urlpatterns = [
     path("api/projects/", ProjectListView.as_view(), name="project-list"),
     path("api/projects/workload/", ProjectWorkloadView.as_view(), name="project-workload"),
+    path("api/projects/<uuid:project_id>/", ProjectDetailView.as_view(), name="project-detail"),
     path("api/projects/<uuid:project_id>/board/", ProjectBoardView.as_view(), name="project-board"),
+    path("api/projects/<uuid:project_id>/events/", ProjectEventsView.as_view(), name="project-events"),
     path(
         "api/projects/<uuid:project_id>/timeline/",
         ProjectTimelineView.as_view(),
         name="project-timeline",
+    ),
+    path(
+        "api/project-tasks/<int:pk>/",
+        ProjectTaskDetailView.as_view(),
+        name="project-task-detail",
     ),
     path(
         "api/project-tasks/<int:pk>/move/",

@@ -161,7 +161,7 @@ Fix:
 
 Verification:
 
-- Full strict Playwright suite passed with 38/38 tests using one worker.
+- Strict operator Playwright suite passed with 16/16 tests using one worker.
 
 ### QA-UI-002: Loading States Displayed Misleading Zero Counts
 
@@ -179,6 +179,96 @@ Fix:
 - Home metrics now display `Loading` independently per data source.
 - Recent Record Activity now depends only on the records query loading state.
 - Document Library now displays a loading state instead of a false empty list.
+
+### QA-CLICK-001: Project Search And Project Updates Were Not Operator-Ready
+
+Severity: High
+
+Status: Fixed in code; backend, unit, and browser QA verified.
+
+Evidence found:
+
+- Unified Search did not index projects, so operator-created projects were not findable.
+- The project overview form could lose a user's selected status/owner when late project data refreshed the page.
+- Project task status/assignee controls needed real browser coverage instead of API-only checks.
+
+Fix:
+
+- Added project indexing and rebuild coverage to the search backend.
+- Added project create/update and task update UI/API coverage.
+- Protected dirty project overview form state from late query refreshes.
+
+### QA-CLICK-002: Admin Field Changes Needed Authority And Layout-Safe Publishing
+
+Severity: Critical
+
+Status: Fixed in code; desktop/mobile browser QA verified.
+
+Evidence found:
+
+- Normal users could reach the Admin page but protected actions needed explicit denial proof through UI clicks.
+- Admin-added fields were added to the object schema but did not reliably appear on New Record forms because layouts were not updated with renamed/added field keys.
+- System-admin destructive field-removal confirmation broke on mobile when long schema paths overflowed the publish panel.
+
+Fix:
+
+- Added real admin/user clickthrough coverage for draft creation, add field, publish, remove field, and denied normal-user actions.
+- Field add/rename/remove now updates form layouts consistently for the selected object type, including raw materials.
+- Long validation and breaking-change paths now wrap on narrow screens so confirmation controls remain clickable.
+
+### QA-CLICK-003: Document Revision History Was Incomplete After Upload
+
+Severity: High
+
+Status: Fixed in code; backend, unit, and browser QA verified.
+
+Evidence found:
+
+- Document detail exposed only the current revision, so Add Revision did not produce a complete visible revision history.
+- Updating the current revision did not refresh the document detail cache immediately.
+- Expanding revision data globally caused record detail document summaries to return full revision arrays.
+
+Fix:
+
+- Document list/detail endpoints now include revision history for document pages.
+- Add Revision updates the document detail cache and revision history immediately.
+- Document detail now exposes controlled Archive Document, which marks the document obsolete and preserves audit/history.
+- Record detail now uses a document summary serializer so record payloads remain lean.
+
+### QA-CLICK-004: QA Seeded Folder Events And Projects Were Not Search-Stable
+
+Severity: High
+
+Status: Fixed in code; backend and browser QA verified.
+
+Evidence found:
+
+- Client-readiness folder events could be written outside the intended QA managed folder when folder auto-generation signals overwrote the seeded path.
+- Seeded folder events were not indexed, causing exact folder-event search failures.
+
+Fix:
+
+- The local-only seed command disables managed-folder auto-generation during seed writes and uses explicit managed paths.
+- Seeded folder events and projects are indexed for search.
+
+### QA-CLICK-005: Project And Task Workspaces Had Tested Placeholders Instead Of Working Surfaces
+
+Severity: High
+
+Status: Fixed in code; backend, unit, and desktop/mobile browser QA verified.
+
+Evidence found:
+
+- Project Documents and Audit tabs were clickable but only displayed unavailable placeholder text.
+- The Task Inbox had no New Task or New Issue control, so operators could not create work from the task workspace.
+- Dashboard testing clicked existing links but did not fail when widget rows rendered as inert non-links.
+
+Fix:
+
+- Project Documents now lists controlled documents attached to the project record.
+- Project Audit now loads project event history from `/api/projects/:id/events/`.
+- Task Inbox now has a New Task form backed by `POST /api/workflow-tasks/`.
+- The operator suite now fails if any dashboard widget item renders as a non-link.
 
 ## Population Coverage Added
 
@@ -199,15 +289,15 @@ Fix:
 $env:PLAYWRIGHT_BASE_URL='http://localhost:5173'
 $env:ALLOW_E2E_USER_SEEDING='true'
 $env:E2E_PASSWORD='qa-password-12345'
-$env:QA_POPULATE_FULL_DATASET='true'
 $env:ALLOW_CLIENT_READINESS_SEED='true'
 $env:STRICT_CLIENT_READINESS='true'
-npm exec -- playwright test --forbid-only
+npx playwright test e2e/client-readiness-operator-clickthrough.spec.ts --project=chromium-desktop --forbid-only
+npx playwright test e2e/client-readiness-operator-clickthrough.spec.ts --project=chromium-mobile --forbid-only
 ```
 
 - Docker stack build/recreate: passed.
-- Frontend TypeScript: `npm run lint` passed.
-- Frontend unit suite: `npm test -- --run` passed, 16 files / 32 tests.
-- Backend suite: `pytest backend\tests` passed, 232 tests.
-- Strict Playwright suite: 38 passed / 0 failed using desktop and mobile Chromium projects.
-- Population pass uploaded 20 plastic-related PDFs and wrote `docs/qa/findings/population-run.md`.
+- Frontend TypeScript: `npm --prefix frontend run lint` passed.
+- Frontend unit suite: `npm --prefix frontend test -- --run` passed, 17 files / 45 tests.
+- Backend suite: `docker compose ... backend python -m pytest -q` passed, 241 tests.
+- Strict operator Playwright suite: 16 passed / 0 failed across desktop and mobile Chromium projects.
+- Earlier population pass uploaded 20 plastic-related PDFs and wrote `docs/qa/findings/population-run.md`.

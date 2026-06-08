@@ -1,11 +1,11 @@
-import { useQuery } from "@tanstack/react-query";
-import { Search } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Plus, Search } from "lucide-react";
 import { FormEvent, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import { DataTable } from "../../components/DataTable";
 import { StatusBadge } from "../../components/StatusBadge";
-import { apiGet } from "../../lib/api";
+import { apiGet, apiPost } from "../../lib/api";
 import { WorkloadView } from "./WorkloadView";
 
 const projectUuidPattern =
@@ -17,22 +17,45 @@ type ProjectListItem = {
   name: string;
   description?: string;
   status?: string;
-  owner?: string | null;
+  owner?: string | number | null;
+  owner_username?: string | null;
   task_count?: number;
   open_tasks?: number;
   target_date?: string | null;
   updated_at?: string;
 };
 
+type ProjectCreatePayload = {
+  name: string;
+  description: string;
+  owner: number | null;
+  target_date: string | null;
+};
+
 export function ProjectList() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [projectLookup, setProjectLookup] = useState("");
   const [validationError, setValidationError] = useState("");
+  const [projectName, setProjectName] = useState("");
+  const [projectDescription, setProjectDescription] = useState("");
+  const [projectOwner, setProjectOwner] = useState("");
+  const [projectTargetDate, setProjectTargetDate] = useState("");
   const projectsQuery = useQuery({
     queryKey: ["projects"],
     queryFn: () => apiGet<ProjectListItem[]>("/projects/")
   });
   const projects = projectsQuery.data ?? [];
+  const createProject = useMutation({
+    mutationFn: (payload: ProjectCreatePayload) => apiPost<ProjectListItem>("/projects/", payload),
+    onSuccess: async () => {
+      setProjectName("");
+      setProjectDescription("");
+      setProjectOwner("");
+      setProjectTargetDate("");
+      await queryClient.invalidateQueries({ queryKey: ["projects"] });
+    }
+  });
 
   function openProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -45,6 +68,16 @@ export function ProjectList() {
 
     setValidationError("");
     navigate(`/projects/${encodeURIComponent(projectUuid)}`);
+  }
+
+  function submitProject(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    createProject.mutate({
+      name: projectName.trim(),
+      description: projectDescription.trim(),
+      owner: projectOwner.trim() ? Number(projectOwner) : null,
+      target_date: projectTargetDate || null
+    });
   }
 
   return (
@@ -65,6 +98,69 @@ export function ProjectList() {
           <span>{errorMessage(projectsQuery.error)}</span>
         </div>
       )}
+
+      <section className="table-panel" aria-labelledby="new-project-title">
+        <div className="panel-heading">
+          <div>
+            <p className="section-kicker">New project</p>
+            <h2 id="new-project-title">Create Project</h2>
+          </div>
+        </div>
+        <form className="admin-form-grid" onSubmit={submitProject}>
+          <label className="field-control">
+            <span>Project Name</span>
+            <input
+              aria-label="Project Name"
+              value={projectName}
+              onChange={(event) => setProjectName(event.target.value)}
+              required
+            />
+          </label>
+          <label className="field-control field-control-wide">
+            <span>Description</span>
+            <textarea
+              aria-label="Description"
+              value={projectDescription}
+              onChange={(event) => setProjectDescription(event.target.value)}
+              rows={3}
+            />
+          </label>
+          <label className="field-control">
+            <span>Owner User ID</span>
+            <input
+              aria-label="Owner User ID"
+              inputMode="numeric"
+              min="1"
+              type="number"
+              value={projectOwner}
+              onChange={(event) => setProjectOwner(event.target.value)}
+            />
+          </label>
+          <label className="field-control">
+            <span>Target Date</span>
+            <input
+              aria-label="Target Date"
+              type="date"
+              value={projectTargetDate}
+              onChange={(event) => setProjectTargetDate(event.target.value)}
+            />
+          </label>
+          <button
+            className="button button-primary"
+            type="submit"
+            disabled={!projectName.trim() || createProject.isPending}
+          >
+            <Plus aria-hidden="true" size={16} />
+            {createProject.isPending ? "Creating" : "Create Project"}
+          </button>
+        </form>
+        {createProject.error && (
+          <div className="admin-alert" role="alert">
+            <strong>Project was not created</strong>
+            <span>{errorMessage(createProject.error)}</span>
+          </div>
+        )}
+      </section>
 
       <section className="table-panel" aria-labelledby="project-index-title">
         <div className="panel-heading">
@@ -101,7 +197,7 @@ export function ProjectList() {
             {
               id: "owner",
               header: "Owner",
-              cell: ({ row }) => row.original.owner ?? "Unassigned"
+              cell: ({ row }) => row.original.owner_username ?? row.original.owner ?? "Unassigned"
             },
             {
               id: "tasks",

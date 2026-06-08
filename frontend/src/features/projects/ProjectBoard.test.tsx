@@ -120,4 +120,70 @@ describe("ProjectBoard", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/column is closed/i);
   });
+
+  it("updates task status and assignee from the board card", async () => {
+    const requests: Array<{ body?: BodyInit | null; method: string; url: string }> = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input.toString();
+        const method = init?.method ?? "GET";
+        requests.push({ body: init?.body, method, url });
+
+        if (url === "/api/projects/31/board/") {
+          return Response.json({
+            project: { id: 31, code: "PRJ-31", title: "Thin wall redesign" },
+            columns: [
+              {
+                id: 10,
+                key: "todo",
+                title: "To Do",
+                tasks: [
+                  {
+                    id: 501,
+                    title: "Cut first mold trial",
+                    state: "todo",
+                    assignee_user: null
+                  }
+                ]
+              },
+              { id: 20, key: "doing", title: "Doing", tasks: [] }
+            ],
+            unassigned_tasks: []
+          });
+        }
+
+        if (url === "/api/project-tasks/501/" && method === "PATCH") {
+          return Response.json({
+            id: 501,
+            title: "Cut first mold trial",
+            state: "in_progress",
+            assignee_user: 7
+          });
+        }
+
+        return Response.json({ detail: `Unexpected request ${method} ${url}` }, { status: 500 });
+      })
+    );
+
+    const user = userEvent.setup();
+    renderBoard();
+
+    const task = await screen.findByRole("article", { name: /cut first mold trial/i });
+    await user.selectOptions(within(task).getByLabelText(/task state/i), "in_progress");
+    await user.type(within(task).getByLabelText(/assignee user id/i), "7");
+    await user.click(within(task).getByRole("button", { name: /save task/i }));
+
+    await waitFor(() => {
+      const updateRequest = requests.find(
+        (request) => request.method === "PATCH" && request.url === "/api/project-tasks/501/"
+      );
+      expect(updateRequest).toBeDefined();
+      expect(JSON.parse(updateRequest?.body?.toString() ?? "{}")).toEqual({
+        assignee_user: 7,
+        state: "in_progress"
+      });
+    });
+  });
 });

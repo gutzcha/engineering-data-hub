@@ -7,13 +7,23 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.permissions import records_user_can_view, user_has_view_scope, user_can
+from apps.audit.services import record_audit_event, snapshot_model
 from apps.projects.models import (
     Project,
+    ProjectEvent,
     ProjectTask,
     ProjectTaskDependency,
 )
-from apps.projects.serializers import ProjectTaskDependencySerializer, ProjectTaskSerializer
-from apps.projects.services import add_task_dependency, move_task
+from apps.projects.serializers import (
+    ProjectCreateSerializer,
+    ProjectEventSerializer,
+    ProjectSerializer,
+    ProjectTaskDependencySerializer,
+    ProjectTaskSerializer,
+    ProjectTaskUpdateSerializer,
+    ProjectUpdateSerializer,
+)
+from apps.projects.services import add_task_dependency, create_project, move_task, update_project
 from apps.records.models import Record
 
 
@@ -75,6 +85,41 @@ class ProjectTaskMoveView(APIView):
             request=request,
         )
         return Response(ProjectTaskSerializer(moved).data, status=status.HTTP_200_OK)
+
+
+class ProjectTaskDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, pk):
+        task = get_object_or_404(ProjectTask.objects.select_related("project__record"), pk=pk)
+        if not user_can(request.user, "edit", "project", record_id=str(task.project.record_id)):
+            raise PermissionDenied("You do not have permission to edit this project task.")
+        serializer = ProjectTaskUpdateSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        before = _project_task_audit_snapshot(task)
+        update_fields = []
+        for field, value in serializer.validated_data.items():
+            setattr(task, field, value)
+            update_fields.append(field)
+        task.updated_by = request.user
+        update_fields.extend(["updated_by", "updated_at"])
+        task.save(update_fields=update_fields)
+        ProjectEvent.objects.create(
+            project=task.project,
+            task=task,
+            action="task_updated",
+            actor=request.user,
+            data={"fields": list(serializer.validated_data.keys())},
+        )
+        record_audit_event(
+            request.user,
+            "project.task_updated",
+            task,
+            before=before,
+            after=_project_task_audit_snapshot(task),
+            request=request,
+        )
+        return Response(ProjectTaskSerializer(task).data, status=status.HTTP_200_OK)
 
 
 class ProjectTimelineView(APIView):
@@ -222,6 +267,49 @@ class ProjectListView(APIView):
             status=status.HTTP_200_OK,
         )
 
+    def post(self, request):
+        serializer = ProjectCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        project = create_project(
+            name=serializer.validated_data["name"],
+            actor=request.user,
+            description=serializer.validated_data.get("description", ""),
+            start_date=serializer.validated_data.get("start_date"),
+            target_date=serializer.validated_data.get("target_date"),
+            owner=serializer.validated_data.get("owner"),
+            data=serializer.validated_data.get("data"),
+        )
+        return Response(ProjectSerializer(project).data, status=status.HTTP_201_CREATED)
+
+
+class ProjectDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, project_id):
+        project = _get_project(request.user, project_id, "view")
+        return Response(ProjectSerializer(project).data, status=status.HTTP_200_OK)
+
+    def patch(self, request, project_id):
+        project = _get_project(request.user, project_id, "edit")
+        serializer = ProjectUpdateSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        updated_project = update_project(
+            project=project,
+            actor=request.user,
+            request=request,
+            **serializer.validated_data,
+        )
+        return Response(ProjectSerializer(updated_project).data, status=status.HTTP_200_OK)
+
+
+class ProjectEventsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, project_id):
+        project = _get_project(request.user, project_id, "view")
+        events = project.events.select_related("actor", "task").order_by("-created_at", "-id")[:100]
+        return Response(ProjectEventSerializer(events, many=True).data, status=status.HTTP_200_OK)
+
 
 def _get_project(user, project_id, action):
     project = get_object_or_404(Project.objects.select_related("record"), pk=project_id)
@@ -250,6 +338,40 @@ def _serialize_board_task(task):
         "estimated_hours": task.estimated_hours,
         "sort_order": task.sort_order,
     }
+
+
+def _project_audit_snapshot(project):
+    return snapshot_model(
+        project,
+        [
+            "id",
+            "record_id",
+            "name",
+            "description",
+            "status",
+            "start_date",
+            "target_date",
+            "owner_id",
+            "updated_by_id",
+        ],
+    )
+
+
+def _project_task_audit_snapshot(task):
+    return snapshot_model(
+        task,
+        [
+            "id",
+            "project_id",
+            "column_id",
+            "title",
+            "state",
+            "assignee_user_id",
+            "due_date",
+            "estimated_hours",
+            "updated_by_id",
+        ],
+    )
 
 
 def _optional_int(value, field_name):

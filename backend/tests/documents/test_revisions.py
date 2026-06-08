@@ -133,15 +133,28 @@ def test_list_and_retrieve_documents_show_visible_metadata_only(
             "file": upload("pc-tds.txt", b"polycarbonate density tensile"),
         },
     ).json()
+    second_revision = client.post(
+        f"/api/documents/{created['id']}/revisions/",
+        {
+            "revision_label": "B",
+            "file": upload("pc-tds-b.txt", b"updated polycarbonate values"),
+        },
+    )
+    assert second_revision.status_code == 201
 
     client.force_login(user_factory("library-viewer", "Viewer"))
     list_response = client.get("/api/documents/")
     assert list_response.status_code == 200
     assert any(document["id"] == created["id"] for document in list_response.json())
+    assert all("revisions" not in document for document in list_response.json())
 
     retrieve_response = client.get(f"/api/documents/{created['id']}/")
     assert retrieve_response.status_code == 200
     assert retrieve_response.json()["title"] == "Polycarbonate Data Sheet"
+    assert [revision["revision_label"] for revision in retrieve_response.json()["revisions"]] == [
+        "A",
+        "B",
+    ]
 
     filtered_response = client.get(f"/api/documents/?owner_record={product_record.pk}")
     assert filtered_response.status_code == 200
@@ -401,6 +414,44 @@ def test_released_revision_is_immutable_and_new_label_is_required(
         revision=released,
         action="revision_released",
         actor=approver,
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_document_archive_marks_document_obsolete_and_records_event(
+    client,
+    user_factory,
+    document_permissions,
+    product_record,
+    settings,
+    tmp_path,
+):
+    from apps.documents.models import Document, DocumentEvent
+
+    settings.MEDIA_ROOT = tmp_path
+    engineer = user_factory("archive-document-engineer", "Engineer")
+    client.force_login(engineer)
+    created = client.post(
+        "/api/documents/",
+        {
+            "owner_record": str(product_record.pk),
+            "title": "Archive Me",
+            "document_type": "specification",
+            "revision_label": "A",
+            "file": upload("archive.txt", b"archive me"),
+        },
+    ).json()
+
+    response = client.post(f"/api/documents/{created['id']}/archive/")
+
+    assert response.status_code == 200
+    assert response.json()["state"] == "obsolete"
+    document = Document.objects.get(pk=created["id"])
+    assert document.state == Document.State.OBSOLETE
+    assert DocumentEvent.objects.filter(
+        document=document,
+        action="document_archived",
+        actor=engineer,
     ).exists()
 
 

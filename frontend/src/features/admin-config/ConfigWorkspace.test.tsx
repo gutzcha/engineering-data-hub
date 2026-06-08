@@ -53,6 +53,30 @@ const activeConfiguration = {
             reference_target_type: "supplier"
           }
         ]
+      },
+      {
+        key: "raw_material",
+        label: "Raw Material",
+        plural_label: "Raw Materials",
+        code_pattern: "MAT-{seq:000000}",
+        title_field: "material_name",
+        folder_template_key: "product_standard",
+        default_workflow_key: "engineering_release",
+        fields: [
+          {
+            key: "material_name",
+            label: "Material Name",
+            type: "text",
+            required: true
+          },
+          {
+            key: "resin_family",
+            label: "Resin Family",
+            type: "choice",
+            required: false,
+            options: ["PP", "HDPE"]
+          }
+        ]
       }
     ],
     form_layouts: [
@@ -67,6 +91,16 @@ const activeConfiguration = {
           {
             label: "Quality",
             fields: ["supplier"]
+          }
+        ]
+      },
+      {
+        key: "raw_material_release",
+        object_type_key: "raw_material",
+        sections: [
+          {
+            label: "Identity",
+            fields: ["material_name", "resin_family"]
           }
         ]
       }
@@ -114,11 +148,14 @@ function renderWorkspace() {
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } }
   });
 
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <ConfigWorkspace />
-    </QueryClientProvider>
-  );
+  return {
+    queryClient,
+    ...render(
+      <QueryClientProvider client={queryClient}>
+        <ConfigWorkspace />
+      </QueryClientProvider>
+    )
+  };
 }
 
 describe("ConfigWorkspace", () => {
@@ -192,7 +229,8 @@ describe("ConfigWorkspace", () => {
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
 
-    renderWorkspace();
+    const { queryClient } = renderWorkspace();
+    queryClient.setQueryData(["config", "active"], activeConfiguration);
 
     expect(
       await screen.findByRole("heading", { name: /admin configuration/i })
@@ -210,7 +248,7 @@ describe("ConfigWorkspace", () => {
     await user.clear(screen.getByLabelText(/object key/i));
     await user.type(screen.getByLabelText(/object key/i), "finished_product");
 
-    expect(screen.getByDisplayValue("finished_product")).toBeInTheDocument();
+    expect(screen.getAllByDisplayValue("finished_product").length).toBeGreaterThan(0);
     expect(screen.getByLabelText(/commercial name required/i)).toBeChecked();
     expect(screen.getByLabelText(/commercial name searchable/i)).toBeChecked();
     expect(screen.getByLabelText(/commercial name unique/i)).toBeChecked();
@@ -256,6 +294,11 @@ describe("ConfigWorkspace", () => {
 
     await waitFor(() =>
       expect(screen.getByText(/published v8/i)).toBeInTheDocument()
+    );
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryData<typeof activeConfiguration>(["config", "active"])?.version
+      ).toBe(8)
     );
     expect(within(screen.getByRole("list", { name: /publish history/i })).getByText(/v8/i)).toBeInTheDocument();
     const validateIndex = requests.findIndex(
@@ -463,6 +506,196 @@ describe("ConfigWorkspace", () => {
       (request) => request.url === "/api/config/drafts/44/publish/"
     );
     expect(publishRequest?.body).toEqual({ confirm_breaking_changes: true });
+  });
+
+  it("adds and removes object fields only through a draft and persists layout cleanup", async () => {
+    const requests: Array<{ body?: unknown; method: string; url: string }> = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input.toString();
+        requests.push({
+          body: init?.body ? JSON.parse(init.body.toString()) : undefined,
+          method: init?.method ?? "GET",
+          url
+        });
+
+        if (url === "/api/config/active/") {
+          return Response.json(activeConfiguration);
+        }
+
+        if (url === "/api/config/history/") {
+          return Response.json(historyConfigurations);
+        }
+
+        if (url === "/api/config/drafts/" && init?.method === "POST") {
+          return Response.json(
+            { id: 45, status: "draft", data: activeConfiguration.data },
+            { status: 201 }
+          );
+        }
+
+        if (url === "/api/config/drafts/45/" && init?.method === "PATCH") {
+          return Response.json({
+            id: 45,
+            status: "draft",
+            data: JSON.parse(init.body?.toString() ?? "{}").data
+          });
+        }
+
+        if (url === "/api/config/drafts/45/validate/" && init?.method === "POST") {
+          return Response.json({ errors: [] });
+        }
+
+        return Response.json({ detail: "Unexpected request" }, { status: 500 });
+      })
+    );
+    const user = userEvent.setup();
+
+    const { queryClient } = renderWorkspace();
+    queryClient.setQueryData(["config", "active"], activeConfiguration);
+
+    await screen.findAllByText(/published v7/i);
+    await user.click(screen.getByRole("button", { name: /create draft/i }));
+    await user.click(screen.getByRole("button", { name: /add field/i }));
+
+    expect(screen.getByDisplayValue("new_field")).toBeInTheDocument();
+    expect(screen.getByLabelText(/visible fields/i)).toHaveValue(
+      "commercial_name, resin_family, new_field"
+    );
+    const newField = screen.getByRole("article", { name: /new field field/i });
+    await user.clear(within(newField).getByDisplayValue("new_field"));
+    await user.type(screen.getByDisplayValue(""), "qa_operator_field");
+    await user.clear(screen.getByDisplayValue("New Field"));
+    await user.type(screen.getByDisplayValue(""), "QA Operator Field");
+    expect(screen.getByLabelText(/visible fields/i)).toHaveValue(
+      "commercial_name, resin_family, qa_operator_field"
+    );
+
+    const resinFamilyField = screen.getByRole("article", { name: /resin family field/i });
+    await user.click(within(resinFamilyField).getByRole("button", { name: /remove field/i }));
+
+    expect(screen.queryByDisplayValue("resin_family")).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/visible fields/i)).toHaveValue(
+      "commercial_name, qa_operator_field"
+    );
+
+    await user.click(screen.getByRole("button", { name: /validate draft/i }));
+
+    await waitFor(() => {
+      const patchRequest = requests.find(
+        (request) => request.method === "PATCH" && request.url === "/api/config/drafts/45/"
+      );
+      expect(patchRequest).toBeDefined();
+      const patchedData = (patchRequest?.body as { data: typeof activeConfiguration.data }).data;
+      expect(patchedData.object_types[0].fields.map((field) => field.key)).toEqual([
+        "commercial_name",
+        "supplier",
+        "qa_operator_field"
+      ]);
+      expect(patchedData.object_types[1].fields.map((field) => field.key)).toEqual([
+        "material_name",
+        "resin_family"
+      ]);
+      expect(patchedData.form_layouts[0].sections).toEqual([
+        {
+          label: "Identity",
+          fields: ["commercial_name", "qa_operator_field"]
+        },
+        {
+          label: "Quality",
+          fields: ["supplier"]
+        }
+      ]);
+      expect(patchedData.form_layouts[1].sections).toEqual([
+        {
+          label: "Identity",
+          fields: ["material_name", "resin_family"]
+        }
+      ]);
+    });
+  });
+
+  it("edits the selected object type instead of always changing product fields", async () => {
+    const requests: Array<{ body?: unknown; method: string; url: string }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = input.toString();
+        requests.push({
+          body: init?.body ? JSON.parse(init.body.toString()) : undefined,
+          method: init?.method ?? "GET",
+          url
+        });
+
+        if (url === "/api/config/active/") {
+          return Response.json(activeConfiguration);
+        }
+
+        if (url === "/api/config/history/") {
+          return Response.json(historyConfigurations);
+        }
+
+        if (url === "/api/config/drafts/" && init?.method === "POST") {
+          return Response.json(
+            { id: 46, status: "draft", data: activeConfiguration.data },
+            { status: 201 }
+          );
+        }
+
+        if (url === "/api/config/drafts/46/" && init?.method === "PATCH") {
+          return Response.json({
+            id: 46,
+            status: "draft",
+            data: JSON.parse(init.body?.toString() ?? "{}").data
+          });
+        }
+
+        if (url === "/api/config/drafts/46/validate/" && init?.method === "POST") {
+          return Response.json({ errors: [] });
+        }
+
+        return Response.json({ detail: "Unexpected request" }, { status: 500 });
+      })
+    );
+    const user = userEvent.setup();
+
+    renderWorkspace();
+
+    await screen.findAllByText(/published v7/i);
+    await user.click(screen.getByRole("button", { name: /create draft/i }));
+    await user.selectOptions(screen.getByLabelText(/admin object type/i), "raw_material");
+    await user.click(screen.getByRole("button", { name: /add field/i }));
+    const newField = screen.getByRole("article", { name: /new field field/i });
+    await user.clear(within(newField).getByLabelText("Field key", { exact: true }));
+    await user.type(within(newField).getByLabelText("Field key", { exact: true }), "qa_density");
+    await user.clear(within(newField).getByLabelText("Field label", { exact: true }));
+    await user.type(within(newField).getByLabelText("Field label", { exact: true }), "QA Density");
+    await user.click(screen.getByRole("button", { name: /validate draft/i }));
+
+    await waitFor(() => {
+      const patchRequest = requests.find(
+        (request) => request.method === "PATCH" && request.url === "/api/config/drafts/46/"
+      );
+      expect(patchRequest).toBeDefined();
+      const patchedData = (patchRequest?.body as { data: typeof activeConfiguration.data }).data;
+      expect(patchedData.object_types[0].fields.map((field) => field.key)).toEqual([
+        "commercial_name",
+        "resin_family",
+        "supplier"
+      ]);
+      expect(patchedData.object_types[1].fields.map((field) => field.key)).toEqual([
+        "material_name",
+        "resin_family",
+        "qa_density"
+      ]);
+      expect(patchedData.form_layouts[1].sections[0].fields).toEqual([
+        "material_name",
+        "resin_family",
+        "qa_density"
+      ]);
+    });
   });
 
   it("clears validation success after a later draft persistence failure", async () => {

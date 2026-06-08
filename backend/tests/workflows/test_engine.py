@@ -201,6 +201,53 @@ def test_workflow_routes_create_complete_and_release_approval_task(
 
 
 @pytest.mark.django_db
+def test_workflow_task_list_post_creates_operator_task_for_record(
+    client,
+    user_factory,
+    release_workflow,
+):
+    engineer = user_factory("api-task-creator", "Engineer")
+    ObjectPermission.objects.create(
+        role_name="Engineer",
+        object_type_key="product",
+        can_view=True,
+        can_edit=True,
+    )
+    record = Record.objects.create(
+        object_type_key="product",
+        code="PROD-WF-TASK",
+        title="Task Product",
+        schema_version=1,
+        data={"commercial_name": "Task Film", "markets": ["medical"]},
+        created_by=engineer,
+        updated_by=engineer,
+    )
+    client.force_login(engineer)
+
+    response = client.post(
+        "/api/workflow-tasks/",
+        {
+            "title": "Investigate supplier issue",
+            "description": "Created from Task Inbox",
+            "related_record": str(record.pk),
+            "assignee_user": engineer.pk,
+            "due_date": "2026-07-01T09:00:00Z",
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["title"] == "Investigate supplier issue"
+    assert body["related_record"] == str(record.pk)
+    assert body["assignee_user"] == engineer.pk
+    task = WorkflowTask.objects.get(pk=body["id"])
+    assert task.instance.record == record
+    assert task.created_by == engineer
+    assert WorkflowEvent.objects.filter(task=task, action="task_created", actor=engineer).exists()
+
+
+@pytest.mark.django_db
 def test_transition_guards_require_actor_role_and_document_type(user_factory):
     engineer = user_factory("workflow-document-engineer", "Engineer")
     reviewer = user_factory("workflow-reviewer", "Reviewer")

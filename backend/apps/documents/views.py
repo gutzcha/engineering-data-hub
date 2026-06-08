@@ -14,7 +14,11 @@ from apps.audit.services import record_audit_event, snapshot_model
 from apps.audit.views import audit_response, document_audit_events
 from apps.documents.extraction import extract_text
 from apps.documents.models import Document, DocumentEvent, DocumentRevision
-from apps.documents.serializers import DocumentRevisionSerializer, DocumentSerializer
+from apps.documents.serializers import (
+    DocumentRevisionSerializer,
+    DocumentSerializer,
+    DocumentSummarySerializer,
+)
 from apps.documents.storage import (
     delete_storage_path,
     discard_finalized_revision_file,
@@ -66,7 +70,7 @@ class DocumentViewSet(viewsets.ViewSet):
                 record_id=str(document.owner_record_id),
             )
         ]
-        return Response(DocumentSerializer(visible_documents, many=True).data)
+        return Response(DocumentSummarySerializer(visible_documents, many=True).data)
 
     def retrieve(self, request, pk=None):
         document = self._get_document(pk)
@@ -153,6 +157,25 @@ class DocumentViewSet(viewsets.ViewSet):
 
         return Response(DocumentRevisionSerializer(revision).data, status=status.HTTP_201_CREATED)
 
+    @action(detail=True, methods=["post"])
+    def archive(self, request, pk=None):
+        document = self._get_document(pk)
+        self._require_record_permission(request.user, "edit", document.owner_record)
+        before = _document_snapshot(document)
+        if document.state != Document.State.OBSOLETE:
+            document.state = Document.State.OBSOLETE
+            document.save(update_fields=["state", "updated_at"])
+            _record_event(document, document.current_revision, "document_archived", request.user)
+            record_audit_event(
+                request.user,
+                "document.archived",
+                document,
+                before=before,
+                after=_document_snapshot(document),
+                request=request,
+            )
+        return Response(DocumentSerializer(document).data, status=status.HTTP_200_OK)
+
     @action(detail=True, methods=["post"], url_path=r"revisions/(?P<revision_id>[^/.]+)/release")
     def release_revision(self, request, pk=None, revision_id=None):
         document = self._get_document(pk)
@@ -234,7 +257,11 @@ class DocumentViewSet(viewsets.ViewSet):
 
     def _get_document(self, pk):
         return get_object_or_404(
-            Document.objects.select_related("owner_record", "current_revision", "folder"),
+            Document.objects.select_related(
+                "owner_record",
+                "current_revision",
+                "folder",
+            ).prefetch_related("revisions"),
             pk=pk,
         )
 

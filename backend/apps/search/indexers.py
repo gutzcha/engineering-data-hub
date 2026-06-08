@@ -36,6 +36,20 @@ def build_document_revision_payload(revision):
     }
 
 
+def build_project_payload(project):
+    record = project.record
+    return {
+        "id": str(project.pk),
+        "record_id": str(record.pk),
+        "object_type_key": record.object_type_key,
+        "code": record.code,
+        "title": project.name,
+        "description": project.description,
+        "status": project.status,
+        "updated_at": project.updated_at.isoformat(),
+    }
+
+
 def build_folder_event_payload(event):
     matched_record = event.matched_record
     return {

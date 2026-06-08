@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -8,6 +8,7 @@ import { DocumentDetailPage, DocumentPanel } from "./DocumentPanel";
 
 describe("DocumentPanel", () => {
   afterEach(() => {
+    cleanup();
     vi.unstubAllGlobals();
   });
 
@@ -49,6 +50,47 @@ describe("DocumentPanel", () => {
     );
   });
 
+  it("shows the full revision history when current and draft revisions exist", () => {
+    render(
+      <MemoryRouter>
+        <DocumentPanel
+          documents={[
+            {
+              id: 77,
+              title: "PC technical data sheet",
+              current_revision: {
+                id: 5,
+                revision_label: "A",
+                extraction_status: "extracted",
+                state: "released"
+              },
+              revisions: [
+                {
+                  id: 5,
+                  revision_label: "A",
+                  extraction_status: "extracted",
+                  state: "released"
+                },
+                {
+                  id: 6,
+                  revision_label: "B",
+                  extraction_status: "extracted",
+                  state: "draft"
+                }
+              ]
+            }
+          ]}
+        />
+      </MemoryRouter>
+    );
+
+    const documentItem = screen.getByText("PC technical data sheet").closest("article");
+    expect(documentItem).not.toBeNull();
+    const revisionHistory = within(documentItem as HTMLElement).getByLabelText("Revision history");
+    expect(revisionHistory).toHaveTextContent(/vA/i);
+    expect(revisionHistory).toHaveTextContent(/vB/i);
+  });
+
   it("renders document preview as formatted UI instead of raw JSON", async () => {
     stubDocumentFetch();
 
@@ -87,10 +129,36 @@ describe("DocumentPanel", () => {
 
     expect(await screen.findByText("Revision B uploaded.")).toBeInTheDocument();
     await waitFor(() => {
+      const documentLink = screen
+        .getAllByText("PC technical data sheet")
+        .find((element) => element.tagName === "A");
+      const documentItem = documentLink?.closest("article");
+      expect(documentItem).not.toBeNull();
+      expect(within(documentItem as HTMLElement).getByLabelText("Revision history")).toHaveTextContent(/vB/i);
+    });
+    await waitFor(() => {
       expect(requests).toContainEqual({
         method: "POST",
         url: "/api/documents/77/revisions/"
       });
+    });
+  });
+
+  it("archives a controlled document from the detail page without deleting it", async () => {
+    const user = userEvent.setup();
+    const requests: Array<{ method: string; url: string }> = [];
+    stubDocumentFetch(requests);
+
+    renderDocumentRoute("/documents/77");
+
+    await user.click(await screen.findByRole("button", { name: /archive document/i }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent(/document archived/i);
+    const documentLink = screen.getByRole("link", { name: /pc technical data sheet/i });
+    expect(documentLink.closest("article")).toHaveTextContent(/obsolete/i);
+    expect(requests).toContainEqual({
+      method: "POST",
+      url: "/api/documents/77/archive/"
     });
   });
 });
@@ -112,6 +180,15 @@ function renderDocumentRoute(initialEntry: string) {
 }
 
 function stubDocumentFetch(requests: Array<{ method: string; url: string }> = []) {
+  let uploadedRevision: {
+    id: number;
+    revision_label: string;
+    file_name: string;
+    extraction_status: string;
+    state: string;
+  } | null = null;
+  let archived = false;
+
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -120,19 +197,21 @@ function stubDocumentFetch(requests: Array<{ method: string; url: string }> = []
       requests.push({ method, url });
 
       if (url === "/api/documents/77/" && method === "GET") {
+        const currentRevision = {
+          id: 5,
+          revision_label: "A",
+          file_name: "pc.pdf",
+          extraction_status: "extracted",
+          state: "draft",
+          created_at: "2026-06-08T08:00:00Z"
+        };
         return jsonResponse({
           id: 77,
           title: "PC technical data sheet",
           document_type: "technical_data_sheet",
-          state: "draft",
-          current_revision: {
-            id: 5,
-            revision_label: "A",
-            file_name: "pc.pdf",
-            extraction_status: "extracted",
-            state: "draft",
-            created_at: "2026-06-08T08:00:00Z"
-          }
+          state: archived ? "obsolete" : "draft",
+          current_revision: currentRevision,
+          revisions: uploadedRevision ? [currentRevision, uploadedRevision] : [currentRevision]
         });
       }
 
@@ -164,16 +243,32 @@ function stubDocumentFetch(requests: Array<{ method: string; url: string }> = []
       }
 
       if (url === "/api/documents/77/revisions/" && method === "POST") {
-        return jsonResponse(
-          {
-            id: 6,
-            revision_label: "B",
-            file_name: "pc-revision-b.pdf",
+        uploadedRevision = {
+          id: 6,
+          revision_label: "B",
+          file_name: "pc-revision-b.pdf",
+          extraction_status: "extracted",
+          state: "draft"
+        };
+        return jsonResponse(uploadedRevision, 201);
+      }
+
+      if (url === "/api/documents/77/archive/" && method === "POST") {
+        archived = true;
+        return jsonResponse({
+          id: 77,
+          title: "PC technical data sheet",
+          document_type: "technical_data_sheet",
+          state: "obsolete",
+          current_revision: {
+            id: 5,
+            revision_label: "A",
+            file_name: "pc.pdf",
             extraction_status: "extracted",
             state: "draft"
           },
-          201
-        );
+          revisions: []
+        });
       }
 
       if (url === "/api/documents/" && method === "GET") {

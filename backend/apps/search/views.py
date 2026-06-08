@@ -134,7 +134,7 @@ def _authorized_hit(user, index_name, hit):
     if index_name == FOLDER_EVENTS_INDEX:
         return _authorized_folder_event_hit(user, hit)
     if index_name == PROJECTS_INDEX:
-        return None
+        return _authorized_project_hit(user, hit)
     return None
 
 
@@ -227,6 +227,33 @@ def _authorized_folder_event_hit(user, hit):
         "record_code": record.code,
         "record_title": record.title,
         "object_type_key": record.object_type_key,
+    }
+
+
+def _authorized_project_hit(user, hit):
+    from apps.projects.models import Project
+
+    project_id = hit.get("id")
+    if not project_id:
+        return None
+    try:
+        project = Project.objects.select_related("record").filter(pk=project_id).first()
+    except (ValueError, ValidationError):
+        return None
+    if not project:
+        return None
+    record = project.record
+    if not user_can(user, "view", record.object_type_key, record_id=str(record.pk)):
+        return None
+    return {
+        **hit,
+        "id": str(project.pk),
+        "record_id": str(record.pk),
+        "object_type_key": record.object_type_key,
+        "code": record.code,
+        "title": project.name,
+        "status": project.status,
+        "description": project.description,
     }
 
 

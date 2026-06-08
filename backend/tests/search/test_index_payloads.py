@@ -2,9 +2,10 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 
-from apps.accounts.models import ObjectPermission
+from apps.accounts.models import ObjectPermission, RecordPermission
 from apps.documents.models import Document, DocumentRevision
 from apps.folders.models import FolderChangeEvent
+from apps.projects.models import Project
 from apps.records.models import Record
 from apps.relationships.models import Relationship
 
@@ -160,9 +161,41 @@ def test_document_revision_payload_contains_required_fields_and_extracted_text()
 
 
 @pytest.mark.django_db
+def test_project_payload_contains_required_fields_and_description():
+    from apps.search.indexers import build_project_payload
+
+    record = Record.objects.create(
+        object_type_key="project",
+        code="PRJ-000001",
+        title="Tooling Transfer",
+        schema_version=1,
+        data={},
+    )
+    project = Project.objects.create(
+        record=record,
+        name="Tooling Transfer",
+        description="Transfer mold qualification to production tooling.",
+        status=Project.Status.ACTIVE,
+    )
+
+    payload = build_project_payload(project)
+
+    assert payload == {
+        "id": str(project.pk),
+        "record_id": str(record.pk),
+        "object_type_key": "project",
+        "code": "PRJ-000001",
+        "title": "Tooling Transfer",
+        "description": "Transfer mold qualification to production tooling.",
+        "status": "active",
+        "updated_at": project.updated_at.isoformat(),
+    }
+
+
+@pytest.mark.django_db
 def test_index_tasks_use_injected_client_without_live_meilisearch(monkeypatch):
     from apps.search import tasks
-    from apps.search.indexers import DOCUMENTS_INDEX, FOLDER_EVENTS_INDEX, RECORDS_INDEX
+    from apps.search.indexers import DOCUMENTS_INDEX, FOLDER_EVENTS_INDEX, PROJECTS_INDEX, RECORDS_INDEX
 
     calls = []
 
@@ -199,13 +232,27 @@ def test_index_tasks_use_injected_client_without_live_meilisearch(monkeypatch):
         path="Products/PROD-000001/spec.txt",
         matched_record=record,
     )
+    project_record = Record.objects.create(
+        object_type_key="project",
+        code="PRJ-000001",
+        title="Indexed Project",
+        schema_version=1,
+        data={},
+    )
+    project = Project.objects.create(
+        record=project_record,
+        name="Indexed Project",
+        description="Search-indexed project.",
+    )
 
     tasks.index_record(record.pk)
     tasks.index_document_revision(revision.pk)
     tasks.index_folder_event(folder_event.pk)
+    tasks.index_project(project.pk)
     tasks.index_record("00000000-0000-0000-0000-000000000000")
     tasks.index_document_revision(999999)
     tasks.index_folder_event(999999)
+    tasks.index_project("00000000-0000-0000-0000-000000000000")
 
     assert calls[0][0] == RECORDS_INDEX
     assert calls[0][1][0]["id"] == str(record.pk)
@@ -213,7 +260,9 @@ def test_index_tasks_use_injected_client_without_live_meilisearch(monkeypatch):
     assert calls[1][1][0]["id"] == str(revision.pk)
     assert calls[2][0] == FOLDER_EVENTS_INDEX
     assert calls[2][1][0]["id"] == str(folder_event.pk)
-    assert len(calls) == 3
+    assert calls[3][0] == PROJECTS_INDEX
+    assert calls[3][1][0]["id"] == str(project.pk)
+    assert len(calls) == 4
 
 
 def test_disabled_client_noops_when_meili_url_is_blank(settings):
@@ -248,6 +297,11 @@ def test_enqueue_helpers_run_index_tasks_after_commit(
         "delay",
         lambda event_id: calls.append(("folder_event", event_id)),
     )
+    monkeypatch.setattr(
+        tasks.index_project,
+        "delay",
+        lambda project_id: calls.append(("project", project_id)),
+    )
 
     with django_capture_on_commit_callbacks(execute=True):
         tasks.enqueue_record_index("record-1")
@@ -255,6 +309,7 @@ def test_enqueue_helpers_run_index_tasks_after_commit(
         tasks.enqueue_document_revision_index(42)
         tasks.enqueue_folder_event_index(43)
         tasks.enqueue_folder_event_indexes([44, 45])
+        tasks.enqueue_project_index("project-1")
 
     assert calls == [
         ("record", "record-1"),
@@ -264,6 +319,7 @@ def test_enqueue_helpers_run_index_tasks_after_commit(
         ("folder_event", 43),
         ("folder_event", 44),
         ("folder_event", 45),
+        ("project", "project-1"),
     ]
 
 
@@ -620,8 +676,27 @@ def test_search_api_allows_unmatched_folder_events_for_system_admin_users(
 
 
 @pytest.mark.django_db
-def test_search_api_denies_project_hits_by_default(client, user_factory, monkeypatch):
+def test_search_api_allows_authorized_project_hits(client, user_factory, monkeypatch):
     import apps.search.views as search_views
+
+    record = Record.objects.create(
+        object_type_key="project",
+        code="PRJ-000777",
+        title="Secret Launch Record",
+        schema_version=1,
+        data={},
+    )
+    project = Project.objects.create(
+        record=record,
+        name="Secret Launch",
+        description="Search-visible launch project",
+        status=Project.Status.ACTIVE,
+    )
+    ObjectPermission.objects.create(
+        role_name="Project Viewer",
+        object_type_key="project",
+        can_view=True,
+    )
 
     class FakeClient:
         enabled = True
@@ -631,16 +706,67 @@ def test_search_api_denies_project_hits_by_default(client, user_factory, monkeyp
             return {
                 "hits": [
                     {
-                        "id": "project-1",
-                        "title": "Secret Launch",
-                        "code": "PRJ-001",
-                        "status": "active",
+                        "id": str(project.pk),
+                        "title": "Stale Indexed Title",
+                        "code": "STALE",
+                        "status": "planning",
+                        "_formatted": {"description": "Search-visible <em>launch</em> project"},
                     }
                 ]
             }
 
     monkeypatch.setattr(search_views, "get_search_client", lambda: FakeClient())
-    client.force_login(user_factory("project-search-user"))
+    client.force_login(user_factory("project-search-user", "Project Viewer"))
+
+    response = client.get("/api/search/?q=launch&type=projects")
+
+    assert response.status_code == 200
+    assert response.json()["results"] == [
+        {
+            "type": "project",
+            "title": "Secret Launch",
+            "code": "PRJ-000777",
+            "snippet": "Search-visible <em>launch</em> project",
+            "object_type_key": "project",
+            "status": "active",
+            "url": f"/projects/{project.pk}",
+        }
+    ]
+
+
+@pytest.mark.django_db
+def test_search_api_denies_record_scoped_project_hits(client, user_factory, monkeypatch):
+    import apps.search.views as search_views
+
+    record = Record.objects.create(
+        object_type_key="project",
+        code="PRJ-000778",
+        title="Hidden Launch Record",
+        schema_version=1,
+        data={},
+    )
+    project = Project.objects.create(record=record, name="Hidden Launch")
+    ObjectPermission.objects.create(
+        role_name="Project Viewer",
+        object_type_key="project",
+        can_view=True,
+    )
+    RecordPermission.objects.create(
+        role_name="Project Viewer",
+        object_type_key="project",
+        record=record,
+        can_view=False,
+    )
+
+    class FakeClient:
+        enabled = True
+
+        def search(self, index_name, query, **params):
+            assert index_name == "projects"
+            return {"hits": [{"id": str(project.pk), "title": "Hidden Launch"}]}
+
+    monkeypatch.setattr(search_views, "get_search_client", lambda: FakeClient())
+    client.force_login(user_factory("project-search-denied-user", "Project Viewer"))
 
     response = client.get("/api/search/?q=launch&type=projects")
 

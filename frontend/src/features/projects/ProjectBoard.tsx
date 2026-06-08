@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, Loader2 } from "lucide-react";
+import { ArrowRight, Loader2, Save } from "lucide-react";
+import { FormEvent, useState } from "react";
 
 import { StatusBadge } from "../../components/StatusBadge";
 import type { StatusTone } from "../../components/StatusBadge";
@@ -14,6 +15,7 @@ export type ProjectTask = {
   owner?: string;
   assignee?: string;
   assigned_to?: string;
+  assignee_user?: string | number | null;
   due_at?: string;
   due_date?: string;
   start_date?: string;
@@ -56,8 +58,14 @@ type ProjectBoardProps = {
   projectId: string | number;
 };
 
+type TaskDraft = {
+  assignee_user: string;
+  state: string;
+};
+
 export function ProjectBoard({ projectId }: ProjectBoardProps) {
   const queryClient = useQueryClient();
+  const [taskDrafts, setTaskDrafts] = useState<Record<string, TaskDraft>>({});
   const boardQuery = useQuery({
     queryKey: ["projects", projectId, "board"],
     queryFn: () => apiGet<ProjectBoardPayload>(`/projects/${projectId}/board/`),
@@ -78,6 +86,43 @@ export function ProjectBoard({ projectId }: ProjectBoardProps) {
       void queryClient.invalidateQueries({ queryKey: ["projects", "workload"] });
     }
   });
+  const updateTask = useMutation({
+    mutationFn: ({ draft, taskId }: { draft: TaskDraft; taskId: string | number }) =>
+      apiPatch<ProjectTask>(`/project-tasks/${taskId}/`, {
+        assignee_user: draft.assignee_user ? Number(draft.assignee_user) : null,
+        state: draft.state
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["projects", projectId, "board"] });
+      void queryClient.invalidateQueries({ queryKey: ["projects", projectId, "timeline"] });
+      void queryClient.invalidateQueries({ queryKey: ["projects", "workload"] });
+    }
+  });
+
+  function draftFor(task: ProjectTask): TaskDraft {
+    return (
+      taskDrafts[String(task.id)] ?? {
+        assignee_user: task.assignee_user === undefined || task.assignee_user === null ? "" : String(task.assignee_user),
+        state: task.state ?? "todo"
+      }
+    );
+  }
+
+  function updateDraft(task: ProjectTask, changes: Partial<TaskDraft>) {
+    const key = String(task.id);
+    setTaskDrafts((current) => ({
+      ...current,
+      [key]: {
+        ...draftFor(task),
+        ...changes
+      }
+    }));
+  }
+
+  function submitTask(event: FormEvent<HTMLFormElement>, task: ProjectTask) {
+    event.preventDefault();
+    updateTask.mutate({ draft: draftFor(task), taskId: task.id });
+  }
 
   return (
     <section className="table-panel project-board-panel" aria-labelledby="project-board-title">
@@ -91,10 +136,10 @@ export function ProjectBoard({ projectId }: ProjectBoardProps) {
         </StatusBadge>
       </div>
 
-      {(boardQuery.error || moveTask.error) && (
+      {(boardQuery.error || moveTask.error || updateTask.error) && (
         <div className="admin-alert project-inline-alert" role="alert">
-          <strong>{moveTask.error ? "Task move failed" : "Board failed"}</strong>
-          <span>{errorMessage(moveTask.error ?? boardQuery.error)}</span>
+          <strong>{moveTask.error ? "Task move failed" : updateTask.error ? "Task update failed" : "Board failed"}</strong>
+          <span>{errorMessage(moveTask.error ?? updateTask.error ?? boardQuery.error)}</span>
         </div>
       )}
 
@@ -114,43 +159,79 @@ export function ProjectBoard({ projectId }: ProjectBoardProps) {
                 {column.tasks.length === 0 ? (
                   <p className="admin-muted">No tasks.</p>
                 ) : (
-                  column.tasks.map((task, index) => (
-                    <article className="board-task" aria-label={taskTitle(task)} key={task.id}>
-                      <div className="board-task-main">
-                        <strong>{taskTitle(task)}</strong>
-                        <span>{taskMeta(task)}</span>
-                      </div>
-                      <StatusBadge tone={taskStatusTone(task.state ?? column.key)}>
-                        {humanize(task.state ?? column.key)}
-                      </StatusBadge>
-                      <label className="field-control board-move-control">
-                        <span>Move task</span>
-                        <select
-                          aria-label="Move task"
-                          value={column.selectValue}
-                          onChange={(event) => {
-                            const targetColumn = columnFromSelectValue(columns, event.target.value);
-                            moveTask.mutate({
-                              taskId: task.id,
-                              column: targetColumn.columnId,
-                              sortOrder: nextSortOrder(columns, targetColumn.columnId, task.id)
-                            });
-                          }}
-                          disabled={moveTask.isPending}
-                        >
-                          {columns.map((targetColumn) => (
-                            <option key={targetColumn.key} value={targetColumn.selectValue}>
-                              {targetColumn.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <span className="board-task-order">
-                        <ArrowRight aria-hidden="true" size={14} />
-                        {index + 1}
-                      </span>
-                    </article>
-                  ))
+                  column.tasks.map((task, index) => {
+                    const draft = draftFor(task);
+
+                    return (
+                      <article className="board-task" aria-label={taskTitle(task)} key={task.id}>
+                        <div className="board-task-main">
+                          <strong>{taskTitle(task)}</strong>
+                          <span>{taskMeta(task)}</span>
+                        </div>
+                        <StatusBadge tone={taskStatusTone(draft.state ?? column.key)}>
+                          {humanize(draft.state ?? column.key)}
+                        </StatusBadge>
+                        <label className="field-control board-move-control">
+                          <span>Move task</span>
+                          <select
+                            aria-label="Move task"
+                            value={column.selectValue}
+                            onChange={(event) => {
+                              const targetColumn = columnFromSelectValue(columns, event.target.value);
+                              moveTask.mutate({
+                                taskId: task.id,
+                                column: targetColumn.columnId,
+                                sortOrder: nextSortOrder(columns, targetColumn.columnId, task.id)
+                              });
+                            }}
+                            disabled={moveTask.isPending || updateTask.isPending}
+                          >
+                            {columns.map((targetColumn) => (
+                              <option key={targetColumn.key} value={targetColumn.selectValue}>
+                                {targetColumn.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <form className="admin-form-grid board-task-edit" onSubmit={(event) => submitTask(event, task)}>
+                          <label className="field-control">
+                            <span>Task State</span>
+                            <select
+                              aria-label="Task State"
+                              value={draft.state}
+                              onChange={(event) => updateDraft(task, { state: event.target.value })}
+                              disabled={updateTask.isPending}
+                            >
+                              <option value="todo">To Do</option>
+                              <option value="in_progress">In Progress</option>
+                              <option value="done">Done</option>
+                              <option value="blocked">Blocked</option>
+                            </select>
+                          </label>
+                          <label className="field-control">
+                            <span>Assignee User ID</span>
+                            <input
+                              aria-label="Assignee User ID"
+                              inputMode="numeric"
+                              min="1"
+                              type="number"
+                              value={draft.assignee_user}
+                              onChange={(event) => updateDraft(task, { assignee_user: event.target.value })}
+                              disabled={updateTask.isPending}
+                            />
+                          </label>
+                          <button className="button button-secondary" type="submit" disabled={updateTask.isPending}>
+                            <Save aria-hidden="true" size={14} />
+                            {updateTask.isPending ? "Saving" : "Save Task"}
+                          </button>
+                        </form>
+                        <span className="board-task-order">
+                          <ArrowRight aria-hidden="true" size={14} />
+                          {index + 1}
+                        </span>
+                      </article>
+                    );
+                  })
                 )}
               </div>
             </section>
@@ -162,6 +243,12 @@ export function ProjectBoard({ projectId }: ProjectBoardProps) {
         <p className="admin-muted project-loading-row">
           <Loader2 aria-hidden="true" size={14} />
           Moving task.
+        </p>
+      )}
+      {updateTask.isPending && (
+        <p className="admin-muted project-loading-row">
+          <Loader2 aria-hidden="true" size={14} />
+          Saving task.
         </p>
       )}
     </section>
@@ -229,11 +316,15 @@ function taskTitle(task: ProjectTask) {
 
 function taskMeta(task: ProjectTask) {
   return [
-    task.assignee ?? task.assigned_to ?? task.owner,
+    task.assignee ?? task.assigned_to ?? task.owner ?? assigneeUserLabel(task.assignee_user),
     task.due_at || task.due_date ? `Due ${formatDate(task.due_at ?? task.due_date)}` : undefined
   ]
     .filter(Boolean)
     .join(" · ") || "No owner or due date";
+}
+
+function assigneeUserLabel(value?: string | number | null) {
+  return value === undefined || value === null || value === "" ? undefined : `User ${value}`;
 }
 
 function formatDate(value?: string) {

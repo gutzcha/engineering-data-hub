@@ -11,6 +11,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.test.utils import override_settings
 from django.utils import timezone
 
 from apps.accounts.models import ObjectPermission
@@ -18,10 +19,12 @@ from apps.accounts.permissions import CONFIGURATION_ADMIN_ROLE, SYSTEM_ADMIN_ROL
 from apps.config_registry.models import ConfigurationVersion
 from apps.config_registry.services import create_draft_from_current, publish_draft
 from apps.folders.models import FolderChangeEvent, ManagedFolder
+from apps.folders.services import managed_path
 from apps.projects.models import Project, ProjectBoardColumn, ProjectTask, ProjectTaskDependency
 from apps.projects.services import create_project
 from apps.records.models import Record
 from apps.reports.models import Dashboard, DashboardWidget
+from apps.search.tasks import enqueue_folder_event_indexes
 from apps.workflows.models import WorkflowDefinition, WorkflowInstance, WorkflowTask
 
 
@@ -44,11 +47,12 @@ class Command(BaseCommand):
         run_id = options["run_id"] or timezone.now().strftime("client-readiness-%Y%m%d%H%M%S")
         run_slug = _run_slug(run_id)
 
-        with transaction.atomic():
-            actor = _seed_actor()
-            _seed_permissions()
-            active_config = _ensure_active_configuration(actor)
-            manifest = _seed_operational_data(run_id, run_slug, actor, active_config)
+        with override_settings(MANAGED_FOLDERS_AUTO_GENERATE=False):
+            with transaction.atomic():
+                actor = _seed_actor()
+                _seed_permissions()
+                active_config = _ensure_active_configuration(actor)
+                manifest = _seed_operational_data(run_id, run_slug, actor, active_config)
 
         manifest_json = json.dumps(manifest, indent=2, sort_keys=True)
         manifest_path = options["manifest_path"]
@@ -341,12 +345,13 @@ def _seed_workflow_tasks(run_slug, actor, product):
 
 
 def _seed_folder_events(run_slug, product, actor):
-    managed_folder, _created = ManagedFolder.objects.get_or_create(
+    folder_relative_path = f"QA/{run_slug}/ProductDocs"
+    managed_folder, _created = ManagedFolder.objects.update_or_create(
         record=product,
         folder_role="primary",
         defaults={
-            "absolute_path": str(Path(settings.BASE_DIR) / "client-readiness-folders" / run_slug),
-            "relative_path": f"QA/{run_slug}/ProductDocs",
+            "absolute_path": str(managed_path(folder_relative_path)),
+            "relative_path": folder_relative_path,
             "template_key": "product_standard",
             "state": ManagedFolder.State.ACTIVE,
         },
@@ -374,6 +379,7 @@ def _seed_folder_events(run_slug, product, actor):
             },
         )
         events.append(event)
+    enqueue_folder_event_indexes([event.pk for event in events])
     return managed_folder, events
 
 

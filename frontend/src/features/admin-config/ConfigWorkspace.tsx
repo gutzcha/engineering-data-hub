@@ -9,7 +9,7 @@ import {
   Save,
   ShieldCheck
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { StatusBadge } from "../../components/StatusBadge";
 import { apiGet, apiPatch, apiPost } from "../../lib/api";
@@ -128,6 +128,7 @@ export function ConfigWorkspace() {
   );
   const [breakingChanges, setBreakingChanges] = useState<ValidationError[]>([]);
   const [breakingChangeConfirmed, setBreakingChangeConfirmed] = useState(false);
+  const [selectedObjectTypeKey, setSelectedObjectTypeKey] = useState("");
 
   const activeConfigQuery = useQuery({
     queryKey: ["admin-config", "active"],
@@ -198,6 +199,7 @@ export function ConfigWorkspace() {
       setDraftData(normalizeConfigData(publishedVersion.data));
       setActiveView("history");
       queryClient.setQueryData(["admin-config", "active"], publishedVersion);
+      queryClient.setQueryData(["config", "active"], publishedVersion);
       queryClient.setQueryData<ConfigVersion[]>(
         ["admin-config", "history"],
         (current = []) => mergeHistory(current, publishedVersion)
@@ -230,6 +232,17 @@ export function ConfigWorkspace() {
     );
     return { count, fieldCount };
   }, [editableData.object_types]);
+
+  useEffect(() => {
+    const objectTypes = editableData.object_types;
+    if (objectTypes.length === 0) {
+      setSelectedObjectTypeKey("");
+      return;
+    }
+    if (!objectTypes.some((objectType) => objectType.key === selectedObjectTypeKey)) {
+      setSelectedObjectTypeKey(objectTypes[0].key);
+    }
+  }, [editableData.object_types, selectedObjectTypeKey]);
 
   function updateDraftData(updater: (data: ConfigData) => ConfigData) {
     setDraftData((current) => updater(normalizeConfigData(current)));
@@ -362,8 +375,10 @@ export function ConfigWorkspace() {
       {activeView === "draft" && (
         <DraftEditorView
           data={editableData}
+          selectedObjectTypeKey={selectedObjectTypeKey}
           readOnly={!draft}
           onChange={updateDraftData}
+          onSelectObjectType={setSelectedObjectTypeKey}
         />
       )}
 
@@ -433,18 +448,93 @@ function CurrentVersionView({
 
 function DraftEditorView({
   data,
+  selectedObjectTypeKey,
   readOnly,
-  onChange
+  onChange,
+  onSelectObjectType
 }: {
   data: ConfigData;
+  selectedObjectTypeKey: string;
   readOnly: boolean;
   onChange: (updater: (data: ConfigData) => ConfigData) => void;
+  onSelectObjectType: (objectTypeKey: string) => void;
 }) {
-  const objectType = data.object_types[0] ?? defaultObjectType();
-  const formLayout = data.form_layouts?.[0] ?? defaultFormLayout(objectType.key);
+  const selectedObjectType =
+    data.object_types.find((candidate) => candidate.key === selectedObjectTypeKey) ??
+    data.object_types[0];
+  const objectType = selectedObjectType ?? defaultObjectType();
+  const formLayout =
+    data.form_layouts?.find((layout) => layout.object_type_key === objectType.key) ??
+    data.form_layouts?.[0] ??
+    defaultFormLayout(objectType.key);
   const folderTemplate =
     data.folder_templates?.[0] ?? defaultFolderTemplate(objectType.folder_template_key);
   const workflow = data.workflows?.[0] ?? defaultWorkflow(objectType.default_workflow_key);
+
+  function addField() {
+    onChange((current) => {
+      const normalized = normalizeConfigData(current);
+      const currentObjectType =
+        normalized.object_types.find((candidate) => candidate.key === objectType.key) ??
+        objectType;
+      const newField = defaultFieldDefinition(currentObjectType.fields);
+      const updatedObjectType = {
+        ...currentObjectType,
+        fields: [...currentObjectType.fields, newField]
+      };
+      const currentLayout =
+        findFormLayout(normalized.form_layouts ?? [], currentObjectType.key) ??
+        defaultFormLayout(updatedObjectType.key);
+      const updatedLayout = addFieldToFirstLayoutSection(
+        currentLayout,
+        newField.key,
+        updatedObjectType.key
+      );
+
+      return {
+        ...normalized,
+        object_types: replaceObjectType(
+          normalized.object_types,
+          currentObjectType.key,
+          updatedObjectType
+        ),
+        form_layouts: replaceFormLayout(
+          normalized.form_layouts ?? [],
+          currentLayout.key,
+          updatedLayout
+        )
+      };
+    });
+  }
+
+  function removeField(fieldKey: string) {
+    onChange((current) => {
+      const normalized = normalizeConfigData(current);
+      const currentObjectType =
+        normalized.object_types.find((candidate) => candidate.key === objectType.key) ??
+        objectType;
+      const updatedObjectType = {
+        ...currentObjectType,
+        fields: currentObjectType.fields.filter((field) => field.key !== fieldKey),
+        title_field:
+          currentObjectType.title_field === fieldKey ? "" : currentObjectType.title_field
+      };
+
+      return {
+        ...normalized,
+        object_types: replaceObjectType(
+          normalized.object_types,
+          currentObjectType.key,
+          updatedObjectType
+        ),
+        form_layouts: removeFieldFromLayouts(
+          normalized.form_layouts ?? [],
+          currentObjectType.key,
+          fieldKey
+        )
+      };
+    });
+  }
 
   return (
     <div className="admin-editor-grid">
@@ -453,15 +543,40 @@ function DraftEditorView({
           Create a draft to enable editing. Current values are shown for review.
         </div>
       )}
+      <section className="table-panel admin-panel" aria-labelledby="object-type-selector-title">
+        <div className="panel-heading">
+          <div>
+            <p className="section-kicker">Schema target</p>
+            <h2 id="object-type-selector-title">Object Type</h2>
+          </div>
+        </div>
+        <div className="admin-panel-body">
+          <label className="field-control">
+            <span>Object Type</span>
+            <select
+              aria-label="Admin object type"
+              value={objectType.key}
+              onChange={(event) => onSelectObjectType(event.target.value)}
+            >
+              {data.object_types.map((candidate) => (
+                <option key={candidate.key} value={candidate.key}>
+                  {candidate.label || candidate.key}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </section>
       <ObjectTypeEditor
         objectType={objectType}
         readOnly={readOnly}
+        onAddField={addField}
         onChange={(updatedObjectType) =>
-          onChange((current) => ({
-            ...current,
-            object_types: replaceFirst(current.object_types, updatedObjectType)
-          }))
+          onChange((current) =>
+            applyObjectTypeUpdate(current, objectType, updatedObjectType)
+          )
         }
+        onRemoveField={removeField}
       />
       <FormLayoutEditor
         layout={formLayout}
@@ -470,7 +585,11 @@ function DraftEditorView({
         onChange={(updatedLayout) =>
           onChange((current) => ({
             ...current,
-            form_layouts: replaceFirst(current.form_layouts ?? [], updatedLayout)
+            form_layouts: replaceFormLayout(
+              current.form_layouts ?? [],
+              formLayout.key,
+              updatedLayout
+            )
           }))
         }
       />
@@ -719,6 +838,214 @@ function normalizeConfigData(data: ConfigData): ConfigData {
 
 function replaceFirst<T>(items: T[], value: T) {
   return items.length > 0 ? [value, ...items.slice(1)] : [value];
+}
+
+function replaceObjectType(
+  items: ObjectTypeDefinition[],
+  previousKey: string,
+  value: ObjectTypeDefinition
+) {
+  const index = items.findIndex((item) => item.key === previousKey);
+  if (index === -1) {
+    return [...items, value];
+  }
+  return [...items.slice(0, index), value, ...items.slice(index + 1)];
+}
+
+function findFormLayout(layouts: FormLayoutDefinition[], objectTypeKey: string) {
+  return layouts.find((layout) => layout.object_type_key === objectTypeKey);
+}
+
+function replaceFormLayout(
+  layouts: FormLayoutDefinition[],
+  previousKey: string,
+  value: FormLayoutDefinition
+) {
+  const index = layouts.findIndex(
+    (layout) => layout.key === previousKey || layout.object_type_key === previousKey
+  );
+  if (index === -1) {
+    return [...layouts, value];
+  }
+  return [...layouts.slice(0, index), value, ...layouts.slice(index + 1)];
+}
+
+function defaultFieldDefinition(existingFields: FieldDefinition[]): FieldDefinition {
+  const fieldKey = nextFieldKey(existingFields);
+
+  return {
+    key: fieldKey,
+    label: "New Field",
+    type: "text",
+    required: false,
+    searchable: false,
+    unique: false
+  };
+}
+
+function nextFieldKey(existingFields: FieldDefinition[]) {
+  const existingKeys = new Set(existingFields.map((field) => field.key));
+
+  if (!existingKeys.has("new_field")) {
+    return "new_field";
+  }
+
+  let index = 2;
+  while (existingKeys.has(`new_field_${index}`)) {
+    index += 1;
+  }
+
+  return `new_field_${index}`;
+}
+
+function addFieldToFirstLayoutSection(
+  layout: FormLayoutDefinition,
+  fieldKey: string,
+  objectTypeKey: string
+): FormLayoutDefinition {
+  const sections =
+    layout.sections && layout.sections.length > 0
+      ? layout.sections
+      : [{ label: "Identity", fields: [] }];
+
+  return {
+    ...layout,
+    object_type_key: layout.object_type_key ?? objectTypeKey,
+    sections: sections.map((section, index) =>
+      index === 0
+        ? {
+            ...section,
+            fields: section.fields.includes(fieldKey)
+              ? section.fields
+              : [...section.fields, fieldKey]
+          }
+        : section
+    )
+  };
+}
+
+function removeFieldFromLayouts(
+  layouts: FormLayoutDefinition[],
+  objectTypeKey: string,
+  fieldKey: string
+) {
+  return layouts.map((layout) => ({
+    ...layout,
+    sections:
+      layout.object_type_key === objectTypeKey
+        ? (layout.sections ?? []).map((section) => ({
+            ...section,
+            fields: section.fields.filter((existingFieldKey) => existingFieldKey !== fieldKey)
+          }))
+        : layout.sections
+  }));
+}
+
+function applyObjectTypeUpdate(
+  data: ConfigData,
+  previousObjectType: ObjectTypeDefinition,
+  updatedObjectType: ObjectTypeDefinition
+) {
+  const renameMap = fieldRenameMap(previousObjectType.fields, updatedObjectType.fields);
+  for (const [fromKey, toKey] of inferredLayoutRenameMap(
+    data.form_layouts ?? [],
+    previousObjectType.key,
+    updatedObjectType.fields
+  )) {
+    renameMap.set(fromKey, toKey);
+  }
+  const renamedLayouts = renameMap.size
+    ? renameFieldsInLayouts(
+        data.form_layouts ?? [],
+        previousObjectType.key,
+        renameMap
+      )
+    : data.form_layouts ?? [];
+
+  return {
+    ...data,
+    object_types: replaceObjectType(
+      data.object_types,
+      previousObjectType.key,
+      updatedObjectType
+    ),
+    form_layouts: renamedLayouts.map((layout) =>
+      layout.object_type_key === previousObjectType.key
+        ? { ...layout, object_type_key: updatedObjectType.key }
+        : layout
+    )
+  };
+}
+
+function inferredLayoutRenameMap(
+  layouts: FormLayoutDefinition[],
+  objectTypeKey: string,
+  updatedFields: FieldDefinition[]
+) {
+  const updatedFieldKeys = new Set(
+    updatedFields.map((field) => field.key).filter(Boolean)
+  );
+  const layoutFieldKeys = uniqueLayoutFieldKeys(layouts, objectTypeKey);
+  const staleLayoutKeys = layoutFieldKeys.filter((fieldKey) => !updatedFieldKeys.has(fieldKey));
+  const missingUpdatedKeys = [...updatedFieldKeys].filter(
+    (fieldKey) => !layoutFieldKeys.includes(fieldKey)
+  );
+
+  if (staleLayoutKeys.length === 1 && missingUpdatedKeys.length === 1) {
+    return new Map([[staleLayoutKeys[0], missingUpdatedKeys[0]]]);
+  }
+  return new Map<string, string>();
+}
+
+function fieldRenameMap(
+  previousFields: FieldDefinition[],
+  updatedFields: FieldDefinition[]
+) {
+  const renames = new Map<string, string>();
+  updatedFields.forEach((updatedField, index) => {
+    const previousField = previousFields[index];
+    if (
+      previousField?.key &&
+      updatedField.key &&
+      previousField.key !== updatedField.key
+    ) {
+      renames.set(previousField.key, updatedField.key);
+    }
+  });
+  return renames;
+}
+
+function uniqueLayoutFieldKeys(layouts: FormLayoutDefinition[], objectTypeKey: string) {
+  const keys: string[] = [];
+  layouts
+    .filter((layout) => layout.object_type_key === objectTypeKey)
+    .forEach((layout) => {
+      (layout.sections ?? []).forEach((section) => {
+        section.fields.forEach((fieldKey) => {
+          if (!keys.includes(fieldKey)) {
+            keys.push(fieldKey);
+          }
+        });
+      });
+    });
+  return keys;
+}
+
+function renameFieldsInLayouts(
+  layouts: FormLayoutDefinition[],
+  objectTypeKey: string,
+  renameMap: Map<string, string>
+) {
+  return layouts.map((layout) => ({
+    ...layout,
+    sections:
+      layout.object_type_key === objectTypeKey
+        ? (layout.sections ?? []).map((section) => ({
+            ...section,
+            fields: section.fields.map((fieldKey) => renameMap.get(fieldKey) ?? fieldKey)
+          }))
+        : layout.sections
+  }));
 }
 
 function mergeHistory(history: ConfigVersion[], version: ConfigVersion) {

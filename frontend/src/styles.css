@@ -501,6 +501,7 @@ select {
 
 .admin-alert {
   display: flex;
+  min-width: 0;
   flex-direction: column;
   gap: 4px;
   border: 1px solid #d79a9a;
@@ -509,10 +510,15 @@ select {
   color: #8a2f2f;
   padding: 10px 12px;
   font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
 .admin-alert strong {
   color: #7d2929;
+}
+
+.admin-alert > * {
+  min-width: 0;
 }
 
 .editor-stack {
@@ -678,6 +684,12 @@ select {
   padding-bottom: 8px;
 }
 
+.definition-list dt,
+.definition-list dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .definition-list dd {
   margin: 3px 0 0;
   color: #17201d;
@@ -710,13 +722,21 @@ select {
 
 .validation-item strong,
 .history-item strong {
+  min-width: 0;
   color: #17201d;
+  overflow-wrap: anywhere;
 }
 
 .validation-item span,
 .history-item span {
+  min-width: 0;
   color: #65716b;
   font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.breaking-change-confirmation {
+  max-width: 100%;
 }
 
 .publish-actions {
@@ -793,6 +813,27 @@ select {
   display: grid;
   gap: 14px;
   padding: 14px 16px 16px;
+}
+
+.project-overview-body {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.project-overview-summary,
+.project-overview-form {
+  position: relative;
+  min-width: 0;
+}
+
+.project-overview-summary {
+  z-index: 0;
+}
+
+.project-overview-form {
+  z-index: 1;
 }
 
 .record-form-stack {
@@ -1319,6 +1360,20 @@ select {
   .saved-view-runner {
     grid-template-columns: 1fr;
   }
+
+  .project-overview-form:focus-within {
+    padding-bottom: 64px;
+  }
+
+  .project-overview-form:focus-within > .button-primary {
+    position: fixed;
+    top: calc(100dvh - 58px);
+    right: 16px;
+    left: 16px;
+    z-index: 80;
+    justify-content: center;
+    box-shadow: 0 8px 24px rgb(20 35 31 / 22%);
+  }
 }
 
 @media (max-width: 640px) {
@@ -1350,6 +1405,17 @@ select {
   .project-link-row,
   .audit-item {
     grid-template-columns: 1fr;
+  }
+
+  .validation-item,
+  .history-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .breaking-change-confirmation {
+    align-items: flex-start;
+    white-space: normal;
   }
 
   .folder-event-actions {

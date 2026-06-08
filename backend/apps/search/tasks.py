@@ -5,9 +5,12 @@ from apps.search.client import get_search_client
 from apps.search.indexers import (
     DOCUMENTS_INDEX,
     FOLDER_EVENTS_INDEX,
+    INDEX_NAMES,
+    PROJECTS_INDEX,
     RECORDS_INDEX,
     build_document_revision_payload,
     build_folder_event_payload,
+    build_project_payload,
     build_record_payload,
 )
 
@@ -57,6 +60,20 @@ def index_folder_event(event_id):
     return client.add_documents(FOLDER_EVENTS_INDEX, [build_folder_event_payload(event)])
 
 
+@shared_task
+def index_project(project_id):
+    from apps.projects.models import Project
+
+    try:
+        project = Project.objects.select_related("record").get(pk=project_id)
+    except (Project.DoesNotExist, ValueError):
+        return None
+    client = get_search_client()
+    if not client.enabled:
+        return None
+    return client.add_documents(PROJECTS_INDEX, [build_project_payload(project)])
+
+
 def enqueue_record_index(record_id):
     transaction.on_commit(lambda: index_record.delay(str(record_id)))
 
@@ -83,10 +100,15 @@ def enqueue_folder_event_indexes(event_ids):
     transaction.on_commit(lambda: [index_folder_event.delay(event_id) for event_id in ids])
 
 
+def enqueue_project_index(project_id):
+    transaction.on_commit(lambda: index_project.delay(str(project_id)))
+
+
 @shared_task
 def rebuild_all_indexes():
     from apps.documents.models import DocumentRevision
     from apps.folders.models import FolderChangeEvent
+    from apps.projects.models import Project
     from apps.records.models import Record
 
     client = get_search_client()
@@ -94,7 +116,7 @@ def rebuild_all_indexes():
         return {"records": 0, "documents": 0, "folder_events": 0, "projects": 0}
 
     counts = {"records": 0, "documents": 0, "folder_events": 0, "projects": 0}
-    for index_name in (RECORDS_INDEX, DOCUMENTS_INDEX, FOLDER_EVENTS_INDEX):
+    for index_name in INDEX_NAMES:
         client.delete_all_documents(index_name)
 
     for batch in _batched(Record.objects.all().iterator(), BATCH_SIZE):
@@ -116,6 +138,11 @@ def rebuild_all_indexes():
             [build_folder_event_payload(event) for event in batch],
         )
         counts["folder_events"] += len(batch)
+
+    project_queryset = Project.objects.select_related("record")
+    for batch in _batched(project_queryset.iterator(), BATCH_SIZE):
+        client.add_documents(PROJECTS_INDEX, [build_project_payload(project) for project in batch])
+        counts["projects"] += len(batch)
 
     return counts
 

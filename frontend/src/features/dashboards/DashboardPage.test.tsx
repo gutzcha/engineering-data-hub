@@ -148,4 +148,80 @@ describe("DashboardPage", () => {
     expect(requests).toContain("/api/dashboards/quality_operations/");
     expect(requests).toContain("/api/saved-views/5/results/?limit=50");
   });
+
+  it("makes count dashboard widget rows clickable filters", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = input.toString();
+
+        if (url === "/api/config/active/") {
+          return Response.json({
+            data: {
+              object_types: [{ key: "product", label: "Product", fields: [] }],
+              dashboards: [{ key: "quality_operations", name: "Quality Operations" }]
+            }
+          });
+        }
+
+        if (url === "/api/saved-views/") {
+          return Response.json({ results: [] });
+        }
+
+        if (url === "/api/dashboards/quality_operations/") {
+          return Response.json({
+            id: 7,
+            name: "Quality Operations",
+            widgets: [
+              {
+                id: 11,
+                title: "Records By Status",
+                widget_type: "count_by_status",
+                data: { items: [{ key: "archived", count: 4 }, { key: "draft", count: 8 }] }
+              },
+              {
+                id: 12,
+                title: "Records By Object Type",
+                widget_type: "count_by_object_type",
+                data: { items: [{ key: "raw_material", count: 3 }] }
+              },
+              {
+                id: 13,
+                title: "Projects By Status",
+                widget_type: "count_by_status",
+                config: { filters: [{ type: "object_type", value: "project" }] },
+                data: { items: [{ key: "active", count: 2 }] }
+              }
+            ]
+          });
+        }
+
+        return Response.json({ detail: `Unexpected request: ${url}` }, { status: 500 });
+      })
+    );
+
+    renderDashboardPage();
+
+    const statusWidget = await screen.findByRole("region", { name: /records by status/i });
+    expect(within(statusWidget).getByRole("link", { name: /archived/i })).toHaveAttribute(
+      "href",
+      "/records?status=archived"
+    );
+    expect(within(statusWidget).getByRole("link", { name: /draft/i })).toHaveAttribute(
+      "href",
+      "/records?status=draft"
+    );
+
+    const objectTypeWidget = screen.getByRole("region", { name: /records by object type/i });
+    expect(within(objectTypeWidget).getByRole("link", { name: /raw material/i })).toHaveAttribute(
+      "href",
+      "/records?object_type_key=raw_material"
+    );
+
+    const scopedStatusWidget = screen.getByRole("region", { name: /projects by status/i });
+    expect(within(scopedStatusWidget).getByRole("link", { name: /active/i })).toHaveAttribute(
+      "href",
+      "/records?object_type_key=project&status=active"
+    );
+  });
 });

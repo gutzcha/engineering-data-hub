@@ -25,6 +25,27 @@ class DocumentRevisionSerializer(serializers.ModelSerializer):
 
 class DocumentSerializer(serializers.ModelSerializer):
     current_revision = DocumentRevisionSerializer(read_only=True)
+    revisions = DocumentRevisionSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Document
+        fields = [
+            "id",
+            "title",
+            "owner_record",
+            "document_type",
+            "current_revision",
+            "revisions",
+            "state",
+            "folder",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "current_revision", "state", "created_at", "updated_at"]
+
+
+class DocumentSummarySerializer(serializers.ModelSerializer):
+    current_revision = DocumentRevisionSerializer(read_only=True)
 
     class Meta:
         model = Document
@@ -39,7 +60,7 @@ class DocumentSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "current_revision", "state", "created_at", "updated_at"]
+        read_only_fields = fields
 
 
 class DocumentEventSerializer(serializers.ModelSerializer):
