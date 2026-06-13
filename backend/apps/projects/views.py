@@ -28,6 +28,7 @@ from rest_framework.views import APIView
 from apps.accounts.permissions import records_user_can_view, user_has_view_scope, user_can
 from apps.projects.models import (
     Project,
+    ProjectEvent,
     ProjectTask,
     ProjectTaskDependency,
 )
@@ -115,6 +116,97 @@ class ProjectBoardView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class ProjectDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, project_id):
+        project = _get_project(request.user, project_id, "view")
+        return Response(
+            {
+                "project": _serialize_project(project),
+                "record": {
+                    "id": str(project.record_id),
+                    "code": project.record.code,
+                    "title": project.record.title,
+                    "status": project.record.status,
+                    "object_type_key": project.record.object_type_key,
+                    "data": project.record.data,
+                },
+                "milestones": [
+                    {
+                        "id": milestone.pk,
+                        "title": milestone.title,
+                        "target_date": milestone.target_date.isoformat()
+                        if milestone.target_date
+                        else None,
+                        "completed_at": milestone.completed_at.isoformat()
+                        if milestone.completed_at
+                        else None,
+                        "sort_order": milestone.sort_order,
+                    }
+                    for milestone in project.milestones.all().order_by(
+                        "target_date",
+                        "sort_order",
+                        "id",
+                    )
+                ],
+                "tasks": [
+                    _serialize_board_task(task)
+                    for task in project.tasks.select_related(
+                        "column",
+                        "milestone",
+                        "assignee_user",
+                    ).order_by("sort_order", "created_at", "id")
+                ],
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class ProjectEventsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, project_id):
+        project = _get_project(request.user, project_id, "view")
+        events = ProjectEvent.objects.filter(project=project).select_related("task", "actor")
+        return Response(
+            [
+                {
+                    "id": event.pk,
+                    "project": str(event.project_id),
+                    "task": event.task_id,
+                    "task_title": event.task.title if event.task_id else "",
+                    "action": event.action,
+                    "actor": event.actor_id,
+                    "actor_username": event.actor.username if event.actor_id else "",
+                    "comment": event.comment,
+                    "data": event.data,
+                    "created_at": event.created_at.isoformat(),
+                }
+                for event in events.order_by("-created_at", "-id")
+            ],
+            status=status.HTTP_200_OK,
+        )
+
+
+class ProjectTaskDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        task = get_object_or_404(
+            ProjectTask.objects.select_related(
+                "project__record",
+                "column",
+                "milestone",
+                "assignee_user",
+            ),
+            pk=pk,
+        )
+        if not user_can(request.user, "view", "project", record_id=str(task.project.record_id)):
+            raise PermissionDenied("You do not have permission to view this project task.")
+        return Response(ProjectTaskSerializer(task).data, status=status.HTTP_200_OK)
 
 
 class ProjectTaskMoveView(APIView):
