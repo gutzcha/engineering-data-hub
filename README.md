@@ -59,6 +59,11 @@ The development override exposes:
 
 PostgreSQL is intentionally kept on the internal Docker network by default.
 
+## Manuals
+
+- [Human User Manual](docs/manual/user-manual.md): Installation, deployment, startup, and browser workflows for operators, engineers, quality reviewers, project owners, and administrators.
+- [Agent Manual](docs/manual/agent-manual.md): Deployment runbooks, maintenance, verification, environment, and handoff rules for AI agents and technical maintainers.
+
 ## Verification
 
 Run the backend and frontend test suites through Compose:
