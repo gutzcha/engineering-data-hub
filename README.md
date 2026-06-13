@@ -19,9 +19,13 @@ Known risks:
 
 -->
 
-# Plastic Engineering Data Hub
+# Engineering Data Hub
 
-Plastic Engineering Data Hub is a self-contained local-server application for managing engineering data, files, search, and operational workflows for plastic engineering teams. It is designed to run behind a company VPN with internal HTTPS and without requiring host-level Python, Node, PostgreSQL, Redis, or search service installs.
+Engineering Data Hub is a self-contained local-server application for managing structured engineering records, controlled documents, project work, search, workflow tasks, audit history, and operational dashboards. It is designed for teams that need a traceable internal system of record without requiring host-level Python, Node, PostgreSQL, Redis, or search service installs.
+
+The current reference implementation is configured for a plastic engineering organization, with example object types such as raw materials, products, product specifications, suppliers, customers, test methods, and project records. Those plastics workflows are a concrete use case of the broader platform: the same configuration-driven model can support other engineering, manufacturing, quality, R&D, or regulated technical operations.
+
+The application is intended to run behind a company VPN or internal network boundary with internal HTTPS, controlled user roles, searchable linked records, and auditable changes.
 
 ## Runtime Services
 
