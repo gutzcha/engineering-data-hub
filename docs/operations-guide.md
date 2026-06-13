@@ -1,24 +1,3 @@
-<!--
-===
-File Summary
-Path: docs\operations-guide.md
-Type: markdown
-Purpose: Operational runbook for backup/restore and day-to-day procedures.
-Primary responsibilities:
-- Domain behavior is summarized for fast onboarding and avoids full-file reread.
-- Core symbols: Operations Guide
-Inputs:
-- Downstream and upstream interactions in the same domain.
-Outputs:
-- API payloads, records, side effects, or UI views depending on file role.
-Dependencies:
-- Shared runtime services and adjacent domain modules.
-Known risks:
-- Validate behavior after migrations, dependency upgrades, or contract changes.
-===
-
--->
-
 # Operations Guide
 
 ## Hardware Recommendation
@@ -99,4 +78,5 @@ curl -k https://<APP_HOST>/api/health/
 ```
 
 The database, Redis, and Meilisearch services have Compose health checks. The backend health endpoint confirms the application can respond through Caddy.
+
 

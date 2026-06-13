@@ -81,7 +81,6 @@ Use these paths first:
 | `docs/release-checklist.md` | Release acceptance checklist. |
 | `docs/manual/user-manual.md` | Human operating manual. |
 | `docs/manual/agent-manual.md` | This agent manual. |
-| `docs/superpowers/codebase-index.md` | Agent-oriented map of the codebase. |
 
 ## 4. Environment And Secrets
 
@@ -553,7 +552,7 @@ When adding or changing behavior, update the relevant docs:
 | Admin/config behavior | `docs/admin-guide.md`, `docs/manual/user-manual.md`. |
 | Release process | `docs/release-checklist.md`, `docs/operations-guide.md`. |
 | User workflow | `docs/manual/user-manual.md`. |
-| Agent workflow or codebase map | `docs/manual/agent-manual.md`, `docs/superpowers/codebase-index.md`. |
+| Agent workflow or maintenance process | `docs/manual/agent-manual.md`. |
 
 Documentation standards:
 

@@ -1,24 +1,3 @@
-<!--
-===
-File Summary
-Path: docs\admin-guide.md
-Type: markdown
-Purpose: Administrative and governance documentation for operations and controls.
-Primary responsibilities:
-- Domain behavior is summarized for fast onboarding and avoids full-file reread.
-- Core symbols: Admin Guide
-Inputs:
-- Downstream and upstream interactions in the same domain.
-Outputs:
-- API payloads, records, side effects, or UI views depending on file role.
-Dependencies:
-- Shared runtime services and adjacent domain modules.
-Known risks:
-- Validate behavior after migrations, dependency upgrades, or contract changes.
-===
-
--->
-
 # Admin Guide
 
 This guide covers the starter Plastic Engineering Data Hub configuration and the routine administration tasks needed to keep it controlled.
@@ -172,4 +151,5 @@ The system treats these as destructive schema changes:
 7. Changing a record reference target.
 
 Avoid deleting fields during a pilot unless the data was never used. Prefer deprecating a field in the label or notes, then remove it after exports and reports have been updated. Removing a field from configuration does not erase historical record JSON; it hides the field from normal forms until an explicit data cleanup or migration is run.
+
 
