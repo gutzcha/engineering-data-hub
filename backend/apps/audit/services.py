@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\audit\services.py
+# Type: python
+# Purpose: Audit service for immutable audit log capture and retrieval APIs.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: record_audit_event, _persist_audit_event, sanitize_request_id, snapshot_model, _actor_or_none
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 import copy
 import json
 import logging
@@ -133,3 +152,4 @@ def _json_ready(value):
         return str(value.pk)
     copied = copy.deepcopy(value)
     return json.loads(json.dumps(copied, cls=DjangoJSONEncoder, default=str))
+

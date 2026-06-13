@@ -1,3 +1,45 @@
+/*
+ * ===
+ * File Summary
+ * Path: frontend\e2e\traceability.spec.ts
+ * Type: typescript
+ * Purpose: End-to-end browser test coverage for critical user workflows.
+ * Primary responsibilities:
+ * - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+ * - Core symbols: inferred from domain responsibilities
+ * Inputs:
+ * - Downstream and upstream interactions in the same domain.
+ * Outputs:
+ * - API payloads, records, side effects, or UI views depending on file role.
+ * Dependencies:
+ * - Shared runtime services and adjacent domain modules.
+ * Known risks:
+ * - Validate behavior after migrations, dependency upgrades, or contract changes.
+ * ===
+ * 
+ */
+
+/*
+ * ===
+ * File Summary
+ * Path: frontend\e2e\traceability.spec.ts
+ * Type: typescript
+ * Purpose: End-to-end browser test coverage for critical user workflows.
+ * Primary responsibilities:
+ * - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+ * - Core symbols: inferred from domain responsibilities
+ * Inputs:
+ * - Downstream and upstream interactions in the same domain.
+ * Outputs:
+ * - API payloads, records, side effects, or UI views depending on file role.
+ * Dependencies:
+ * - Shared runtime services and adjacent domain modules.
+ * Known risks:
+ * - Validate behavior after migrations, dependency upgrades, or contract changes.
+ * ===
+ * 
+ */
+
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
@@ -482,3 +524,5 @@ function pdfWithText(text: string) {
 
   return Buffer.from(pdf, "ascii");
 }
+
+

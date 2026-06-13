@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\workflows\views.py
+# Type: python
+# Purpose: Workflow domain for task models, engine execution, and worker scheduling.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: IsAuthenticated, has_permission, WorkflowTaskSerializer, Meta, WorkflowTaskListView
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
@@ -192,3 +211,4 @@ def _serialize_instance(instance):
             for transition in transitions
         ],
     }
+

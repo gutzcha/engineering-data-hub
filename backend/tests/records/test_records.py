@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\tests\records\test_records.py
+# Type: python
+# Purpose: Backend test suite validating domain invariants and API behavior.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: user_factory, create_user, active_config, permissions, post_json
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
@@ -900,3 +919,41 @@ def test_update_revalidates_data_and_refreshes_title(client, user_factory, activ
     assert response.status_code == 200
     assert response.json()["title"] == "New Name"
     assert response.json()["data"]["category"] == "resin"
+
+
+@pytest.mark.django_db
+def test_record_payload_is_backed_by_active_schema_fields(
+    client,
+    user_factory,
+    active_config,
+    permissions,
+):
+    client.force_login(user_factory("schema-field-engineer", "Engineer"))
+    response = post_json(
+        client,
+        "/api/records/",
+        {
+            "object_type_key": "product",
+            "data": {
+                "commercial_name": "Schema Driven Product",
+                "category": "film",
+                "grade": 11.5,
+                "markets": ["medical", "industrial"],
+                "active": True,
+            },
+        },
+    )
+
+    assert response.status_code == 201
+    detail = client.get(f"/api/records/{response.json()['id']}/")
+    payload = detail.json()
+    assert detail.status_code == 200
+    assert payload["schema_version"] == active_config.version
+    assert set(payload["data"].keys()) == {
+        "commercial_name",
+        "category",
+        "grade",
+        "markets",
+        "active",
+    }
+

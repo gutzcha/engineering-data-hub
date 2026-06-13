@@ -1,2 +1,22 @@
 backend/celerybeat-schedule
 frontend/test-results/
+
+# Python/runtime artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Frontend/runtime artifacts
+node_modules/
+frontend/dist/
+test-results/
+playwright-report/
+
+# Local environment and generated operational data
+.env
+.env.*
+!.env.example
+!example.env
+backups/

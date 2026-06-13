@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\tests\projects\test_projects.py
+# Type: python
+# Purpose: Backend test suite validating domain invariants and API behavior.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: user_factory, create_user, active_project_config, project_permissions, post_json
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 import pytest
 from django.core.exceptions import ValidationError
 from django.contrib.auth import get_user_model
@@ -408,3 +427,4 @@ def test_project_workload_allows_record_scoped_project_viewer(
             "estimated_hours": 4.0,
         }
     ]
+

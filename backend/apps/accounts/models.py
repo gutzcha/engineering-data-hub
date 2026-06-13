@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\accounts\models.py
+# Type: python
+# Purpose: Accounts service handling identity, roles, permissions, and authentication-facing APIs.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: ObjectPermission, Meta, __str__, RecordPermission, save
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from django.db import models
 
 
@@ -57,3 +76,4 @@ class RecordPermission(models.Model):
 
     def __str__(self):
         return f"{self.role_name}: {self.object_type_key} {self.record_id}"
+

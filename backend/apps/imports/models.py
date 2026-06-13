@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\imports\models.py
+# Type: python
+# Purpose: Imports domain for parser/mapping workflows and linked entity updates.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: ImportJob, State, Meta, __str__, ImportAuditEvent
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from django.conf import settings
 from django.db import models
 
@@ -86,3 +105,4 @@ class ImportAuditEvent(models.Model):
     def __str__(self):
         record_code = self.record.code if self.record else "unknown"
         return f"{self.action}: {record_code}"
+

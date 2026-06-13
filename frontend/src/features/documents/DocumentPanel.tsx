@@ -1,10 +1,31 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+/*
+ * ===
+ * File Summary
+ * Path: frontend\src\features\documents\DocumentPanel.tsx
+ * Type: typescript
+ * Purpose: Frontend feature module implementing business flows and UI surfaces.
+ * Primary responsibilities:
+ * - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+ * - Core symbols: DocumentRevision, DocumentItem, DocumentUploadMetadata, DocumentPanel, DocumentLibraryPage
+ * Inputs:
+ * - Downstream and upstream interactions in the same domain.
+ * Outputs:
+ * - API payloads, records, side effects, or UI views depending on file role.
+ * Dependencies:
+ * - Shared runtime services and adjacent domain modules.
+ * Known risks:
+ * - Validate behavior after migrations, dependency upgrades, or contract changes.
+ * ===
+ * 
+ */
+
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Eye, FileText, FileUp, Link as LinkIcon, Rocket } from "lucide-react";
-import { useState } from "react";
-import { useParams } from "react-router-dom";
+import { useMemo, useState } from "react";
+import { Link, useParams } from "react-router-dom";
 
 import { StatusBadge } from "../../components/StatusBadge";
-import { apiPostForm } from "../../lib/api";
+import { apiGet, apiPost, apiPostForm } from "../../lib/api";
 
 export type DocumentRevision = {
   id?: string | number;
@@ -29,6 +50,10 @@ export type DocumentItem = {
   preview_url?: string;
   download_url?: string;
   audit_url?: string;
+  owner_record?: string | number;
+  owner_record_code?: string;
+  owner_record_title?: string;
+  owner_record_object_type?: string;
   current_revision?: DocumentRevision | null;
   revisions?: DocumentRevision[];
 };
@@ -38,6 +63,13 @@ export type DocumentUploadMetadata = {
   title?: string;
   document_type?: string;
   revision_label?: string;
+};
+
+type DocumentListResponse = {
+  count?: number;
+  next?: string | null;
+  previous?: string | null;
+  results?: DocumentItem[];
 };
 
 type DocumentPanelProps = {
@@ -133,22 +165,50 @@ export function DocumentPanel({
 export function DocumentLibraryPage() {
   const queryClient = useQueryClient();
   const [ownerRecord, setOwnerRecord] = useState("");
+  const [documentType, setDocumentType] = useState("");
+  const ownerFilter = ownerRecord.trim();
+  const typeFilter = documentType.trim();
+
+  const documentsQuery = useQuery({
+    queryKey: ["documents", "list", ownerFilter, typeFilter],
+    queryFn: () =>
+      apiGet<DocumentItem[] | DocumentListResponse>(`/documents/${documentsQueryString(ownerFilter, typeFilter)}`)
+  });
+
+  const documents = useMemo(() => {
+    const list = asDocumentList(documentsQuery.data);
+    if (!typeFilter) {
+      return list;
+    }
+    return list.filter(
+      (document) =>
+        (document.document_type ?? "").toLowerCase() === typeFilter.toLowerCase()
+    );
+  }, [documentsQuery.data, typeFilter]);
+
   const uploadDocument = useMutation({
-    mutationFn: ({
-      file,
-      metadata
-    }: {
-      file: File;
-      metadata: DocumentUploadMetadata;
-    }) =>
+    mutationFn: ({ file, metadata }: { file: File; metadata: DocumentUploadMetadata }) =>
       apiPostForm<DocumentItem>(
         "/documents/",
-        buildDocumentUploadForm(file, { ...metadata, owner_record: ownerRecord })
+        buildDocumentUploadForm(file, {
+          ...metadata,
+          owner_record: ownerFilter || metadata.owner_record
+        })
       ),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["documents"] });
+      void queryClient.invalidateQueries({ queryKey: ["documents", "list"] });
     }
   });
+
+  const releaseDocument = useMutation({
+    mutationFn: ({ documentId, revisionId }: { documentId: string | number; revisionId: string | number }) =>
+      apiPost<DocumentItem>(`/documents/${documentId}/revisions/${revisionId}/release/`, {}),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["documents", "list"] });
+    }
+  });
+
+  const uploadError = uploadDocument.error ?? releaseDocument.error;
 
   return (
     <div className="page-stack">
@@ -164,7 +224,11 @@ export function DocumentLibraryPage() {
             <p className="section-kicker">Create controlled document</p>
             <h2 id="document-upload-title">Upload to Owner Record</h2>
           </div>
-          <StatusBadge tone="neutral">Create Only</StatusBadge>
+          <StatusBadge tone={uploadDocument.isPending ? "neutral" : documentsQuery.isLoading ? "neutral" : "active"}>
+            {documentsQuery.isLoading
+              ? "Loading documents"
+              : `${documents.length} Loaded`}
+          </StatusBadge>
         </div>
         <div className="record-panel-body">
           <label className="field-control">
@@ -173,39 +237,139 @@ export function DocumentLibraryPage() {
               aria-label="Owner record"
               value={ownerRecord}
               onChange={(event) => setOwnerRecord(event.target.value)}
+              placeholder="Optional: filter or target upload by record id"
+            />
+          </label>
+          <label className="field-control">
+            <span>Document Type</span>
+            <input
+              aria-label="Document type"
+              value={documentType}
+              onChange={(event) => setDocumentType(event.target.value)}
+              placeholder="Optional filter"
             />
           </label>
           <DocumentPanel
-            ownerRecordId={ownerRecord}
+            documents={documents}
+            ownerRecordId={ownerFilter}
             isUploading={uploadDocument.isPending}
             onUpload={(file, metadata) => uploadDocument.mutate({ file, metadata })}
+            onRelease={(documentId, revisionId) => releaseDocument.mutate({ documentId, revisionId })}
           />
         </div>
       </section>
+
+      {documentsQuery.error && (
+        <div className="admin-alert" role="alert">
+          <strong>Document list failed</strong>
+          <span>{errorMessage(documentsQuery.error)}</span>
+        </div>
+      )}
+
+      {uploadError && (
+        <div className="admin-alert" role="alert">
+          <strong>Document action failed</strong>
+          <span>{errorMessage(uploadError)}</span>
+        </div>
+      )}
     </div>
   );
 }
 
 export function DocumentDetailPage() {
   const { documentId = "" } = useParams();
+  const queryClient = useQueryClient();
+
+  const documentQuery = useQuery({
+    queryKey: ["documents", documentId],
+    queryFn: () => apiGet<DocumentItem>(`/documents/${documentId}/`),
+    enabled: Boolean(documentId)
+  });
+
+  const releaseDocument = useMutation({
+    mutationFn: ({ documentId, revisionId }: { documentId: string | number; revisionId: string | number }) =>
+      apiPost<DocumentItem>(`/documents/${documentId}/revisions/${revisionId}/release/`, {}),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["documents", documentId] });
+      void queryClient.invalidateQueries({ queryKey: ["documents", "list"] });
+    }
+  });
+
+  if (documentQuery.isLoading) {
+    return (
+      <div className="empty-state">
+        <FileText aria-hidden="true" size={24} />
+        <div>
+          <h2>Loading document</h2>
+          <p>Fetching document metadata and revisions.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!documentQuery.data) {
+    return (
+      <div className="empty-state" role="alert">
+        <FileText aria-hidden="true" size={24} />
+        <div>
+          <h2>Document not found</h2>
+          <p>The requested document could not be loaded.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const document = documentQuery.data;
+  const revisionCount = document.revisions?.length ?? 0;
 
   return (
     <div className="page-stack">
       <section className="workspace-header" aria-labelledby="document-detail-title">
         <div>
           <p className="section-kicker">Controlled document</p>
-          <h1 id="document-detail-title">Document {documentId}</h1>
+          <h1 id="document-detail-title">
+            {document.title ?? document.name ?? `Document ${document.id}`}
+          </h1>
         </div>
       </section>
-      <section className="empty-state">
-        <FileText aria-hidden="true" size={24} />
-        <div>
-          <h2>Document search target</h2>
-          <p>
-            Document list and retrieve endpoints are not available yet. Use the
-            source record to view attached document metadata and revisions.
-          </p>
+      <section className="table-panel detail-panel" aria-labelledby="document-metadata-title">
+        <div className="panel-heading">
+          <div>
+            <p className="section-kicker">Document metadata</p>
+            <h2 id="document-metadata-title">Document {document.id}</h2>
+          </div>
+          <StatusBadge tone={document.state === "released" ? "ready" : "active"}>
+            {document.state ?? "Draft"}
+          </StatusBadge>
         </div>
+        <dl className="definition-list">
+          <div>
+            <dt>Type</dt>
+            <dd>{document.document_type ?? "Not set"}</dd>
+          </div>
+          <div>
+            <dt>Owner Record</dt>
+            <dd>
+              {document.owner_record ? (
+                <Link to={`/records/${document.owner_record}`}>{ownerRecordLabel(document)}</Link>
+              ) : (
+                "Not set"
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt>Revisions</dt>
+            <dd>{revisionCount}</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section className="detail-grid">
+        <DocumentPanel
+          documents={[document]}
+          ownerRecordId={document.owner_record}
+          onRelease={(documentId, revisionId) => releaseDocument.mutate({ documentId, revisionId })}
+        />
       </section>
     </div>
   );
@@ -231,6 +395,29 @@ export function buildDocumentUploadForm(file: File, metadata: DocumentUploadMeta
   return formData;
 }
 
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Document request failed.";
+}
+
+function asDocumentList(response?: DocumentItem[] | DocumentListResponse) {
+  if (!response) {
+    return [];
+  }
+  return Array.isArray(response) ? response : response.results ?? [];
+}
+
+function documentsQueryString(ownerRecord: string, documentType: string) {
+  const params = new URLSearchParams();
+  if (ownerRecord) {
+    params.set("owner_record", ownerRecord);
+  }
+  if (documentType) {
+    params.set("document_type", documentType);
+  }
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
 function DocumentListItem({
   document,
   onRelease
@@ -244,11 +431,20 @@ function DocumentListItem({
   return (
     <article className="document-item" role="listitem">
       <div className="document-main">
-        <strong>{document.title ?? document.name ?? document.filename ?? document.id}</strong>
+        <strong>
+          <Link className="text-link" to={`/documents/${document.id}`}>
+            {document.title ?? document.name ?? document.filename ?? document.id}
+          </Link>
+        </strong>
         <span>
           Extraction:{" "}
           {document.extraction_status ?? revision?.extraction_status ?? "not started"}
         </span>
+        {document.owner_record && (
+          <Link className="text-link" to={`/records/${document.owner_record}`}>
+            Owner record: {ownerRecordLabel(document)}
+          </Link>
+        )}
       </div>
       <StatusBadge tone={status === "released" ? "ready" : "review"}>{status}</StatusBadge>
       <RevisionHistory revisions={revision ? [revision] : document.revisions ?? []} />
@@ -310,6 +506,15 @@ function currentRevision(document: DocumentItem) {
   return document.current_revision ?? document.revisions?.[0] ?? null;
 }
 
+function ownerRecordLabel(document: DocumentItem) {
+  const code = document.owner_record_code?.trim();
+  const title = document.owner_record_title?.trim();
+  if (code && title) {
+    return `${code} - ${title}`;
+  }
+  return code || title || String(document.owner_record ?? "Not set");
+}
+
 function formatDate(value?: string) {
   if (!value) {
     return "";
@@ -317,3 +522,4 @@ function formatDate(value?: string) {
 
   return new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(value));
 }
+

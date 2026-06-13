@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\api\views.py
+# Type: python
+# Purpose: API facade and health/bootstrapping endpoints.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: search_status, health
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from django.conf import settings
 from django.db import DatabaseError, Error, InterfaceError, OperationalError, connection
 from rest_framework.decorators import api_view
@@ -27,3 +46,4 @@ def health(_request):
         return Response(response, status=503)
 
     return Response(response)
+

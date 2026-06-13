@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\backups\services.py
+# Type: python
+# Purpose: Backup service managing backup manifests, task scheduling, and restore metadata.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: BackupError, create_backup, run_pg_dump, _generate_backup_id, _validate_backup_id
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 import hashlib
 import json
 import os
@@ -309,3 +328,4 @@ def _ensure_child_path(path: Path, parent: Path):
         raise BackupError(f"Backup path {path} is outside backup root {parent}.") from exc
     if relative_path == Path("."):
         raise BackupError(f"Backup path {path} must be a strict child of backup root {parent}.")
+

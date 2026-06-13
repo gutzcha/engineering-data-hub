@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\tests\documents\test_revisions.py
+# Type: python
+# Purpose: Backend test suite validating domain invariants and API behavior.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: user_factory, create_user, document_permissions, product_record, upload
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 import hashlib
 
 import pytest
@@ -709,3 +728,4 @@ def test_download_file_deleted_after_exists_check_returns_controlled_not_found(
         revision=revision,
         action="storage_missing",
     ).exists()
+

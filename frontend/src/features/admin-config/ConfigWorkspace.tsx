@@ -1,3 +1,24 @@
+/*
+ * ===
+ * File Summary
+ * Path: frontend\src\features\admin-config\ConfigWorkspace.tsx
+ * Type: typescript
+ * Purpose: Frontend feature module implementing business flows and UI surfaces.
+ * Primary responsibilities:
+ * - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+ * - Core symbols: FieldDefinition, ObjectTypeDefinition, FormLayoutDefinition, FolderTemplateDefinition, WorkflowDefinition
+ * Inputs:
+ * - Downstream and upstream interactions in the same domain.
+ * Outputs:
+ * - API payloads, records, side effects, or UI views depending on file role.
+ * Dependencies:
+ * - Shared runtime services and adjacent domain modules.
+ * Known risks:
+ * - Validate behavior after migrations, dependency upgrades, or contract changes.
+ * ===
+ * 
+ */
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -9,10 +30,11 @@ import {
   Save,
   ShieldCheck
 } from "lucide-react";
+import type { FormEvent } from "react";
 import { useMemo, useState } from "react";
 
 import { StatusBadge } from "../../components/StatusBadge";
-import { apiGet, apiPatch, apiPost } from "../../lib/api";
+import { apiDelete, apiGet, apiPatch, apiPost } from "../../lib/api";
 import { FolderTemplateEditor } from "./FolderTemplateEditor";
 import { FormLayoutEditor } from "./FormLayoutEditor";
 import { ObjectTypeEditor } from "./ObjectTypeEditor";
@@ -99,7 +121,20 @@ type ValidationError = {
   message: string;
 };
 
-type WorkspaceView = "current" | "draft" | "validation" | "publish" | "history";
+type WorkspaceView = "home" | "users" | "draft" | "validation" | "publish" | "history";
+
+type ManagedUser = {
+  id: number;
+  username: string;
+  email?: string;
+  first_name?: string;
+  last_name?: string;
+  is_active: boolean;
+  is_superuser: boolean;
+  roles: string[];
+};
+
+type ManagedUserResponse = ManagedUser[] | { results?: ManagedUser[] };
 
 const emptyConfig: ConfigData = {
   object_types: [],
@@ -120,7 +155,7 @@ const sampleRecord = {
 
 export function ConfigWorkspace() {
   const queryClient = useQueryClient();
-  const [activeView, setActiveView] = useState<WorkspaceView>("current");
+  const [activeView, setActiveView] = useState<WorkspaceView>("home");
   const [draft, setDraft] = useState<ConfigDraft | null>(null);
   const [draftData, setDraftData] = useState<ConfigData>(emptyConfig);
   const [validationErrors, setValidationErrors] = useState<ValidationError[] | null>(
@@ -355,8 +390,19 @@ export function ConfigWorkspace() {
         })}
       </div>
 
-      {activeView === "current" && (
-        <CurrentVersionView config={activeConfig} isLoading={activeConfigQuery.isLoading} />
+      {activeView === "home" && (
+        <AdminLandingView
+          data={editableData}
+          activeConfig={activeConfig}
+          hasDraft={hasDraft}
+          onNavigate={setActiveView}
+          onCreateDraft={() => createDraft.mutate()}
+          isCreatingDraft={createDraft.isPending}
+        />
+      )}
+
+      {activeView === "users" && (
+        <UsersRolesView />
       )}
 
       {activeView === "draft" && (
@@ -428,6 +474,364 @@ function CurrentVersionView({
         />
       </div>
     </section>
+  );
+}
+
+function AdminLandingView({
+  data,
+  activeConfig,
+  hasDraft,
+  onNavigate,
+  onCreateDraft,
+  isCreatingDraft
+}: {
+  data: ConfigData;
+  activeConfig?: ConfigVersion;
+  hasDraft: boolean;
+  onNavigate: (view: WorkspaceView) => void;
+  onCreateDraft: () => void;
+  isCreatingDraft: boolean;
+}) {
+  const actions: Array<{
+    title: string;
+    description: string;
+    view: WorkspaceView;
+    badge: string;
+  }> = [
+    {
+      title: "Users & Roles",
+      description: "Add people, rename users, deactivate users, and assign admin/operator/viewer roles.",
+      view: "users",
+      badge: "Identity"
+    },
+    {
+      title: "Record Templates",
+      description: "Edit object types, fields, form layouts, folder templates, workflows, and dashboard widget definitions.",
+      view: "draft",
+      badge: `${data.object_types.length} types`
+    },
+    {
+      title: "Dashboard Widgets",
+      description: "Review configured dashboard definitions here, then use Dashboards to design saved personal layouts.",
+      view: "draft",
+      badge: `${data.dashboards?.length ?? 0} widgets`
+    },
+    {
+      title: "Validation & Safety",
+      description: "Check drafts for schema errors and breaking changes before publishing.",
+      view: "validation",
+      badge: hasDraft ? "Draft ready" : "Create draft"
+    },
+    {
+      title: "Publish Configuration",
+      description: "Release a validated configuration with explicit breaking-change confirmation.",
+      view: "publish",
+      badge: activeConfig ? `v${activeConfig.version}` : "Not published"
+    },
+    {
+      title: "Published Layouts",
+      description: "Review published versions and confirm the default system layout exists.",
+      view: "history",
+      badge: "History"
+    }
+  ];
+
+  return (
+    <>
+      <CurrentVersionView config={activeConfig} isLoading={false} />
+      {!hasDraft && (
+        <section className="table-panel admin-panel" aria-labelledby="admin-draft-start-title">
+          <div className="panel-heading">
+            <div>
+              <p className="section-kicker">Safe editing</p>
+              <h2 id="admin-draft-start-title">Create a Draft Before Changing Templates</h2>
+            </div>
+            <StatusBadge tone="review">Recommended</StatusBadge>
+          </div>
+          <div className="admin-panel-body admin-button-row">
+            <p className="admin-muted">
+              Drafts let you edit templates, widgets, and workflows without changing the live published layout.
+            </p>
+            <button className="button button-primary" type="button" onClick={onCreateDraft} disabled={isCreatingDraft}>
+              {isCreatingDraft ? <Loader2 aria-hidden="true" size={16} /> : <Save aria-hidden="true" size={16} />}
+              Create Draft
+            </button>
+          </div>
+        </section>
+      )}
+      <section className="admin-action-grid" aria-label="Admin actions">
+        {actions.map((action) => (
+          <button
+            className="admin-action-card"
+            type="button"
+            key={action.title}
+            onClick={() => onNavigate(action.view)}
+          >
+            <span className="section-kicker">{action.badge}</span>
+            <strong>{action.title}</strong>
+            <small>{action.description}</small>
+          </button>
+        ))}
+      </section>
+    </>
+  );
+}
+
+function UsersRolesView() {
+  const queryClient = useQueryClient();
+  const [newUser, setNewUser] = useState({
+    username: "",
+    email: "",
+    first_name: "",
+    last_name: "",
+    role: "Operator",
+    password: ""
+  });
+
+  const usersQuery = useQuery({
+    queryKey: ["admin-users"],
+    queryFn: () => apiGet<ManagedUserResponse>("/accounts/users/")
+  });
+
+  const createUser = useMutation({
+    mutationFn: () =>
+      apiPost<ManagedUser>("/accounts/users/", {
+        username: newUser.username.trim(),
+        email: newUser.email.trim(),
+        first_name: newUser.first_name.trim(),
+        last_name: newUser.last_name.trim(),
+        password: newUser.password,
+        roles: [newUser.role],
+        is_active: true,
+        is_superuser: newUser.role === "System Admin"
+      }),
+    onSuccess: () => {
+      setNewUser({
+        username: "",
+        email: "",
+        first_name: "",
+        last_name: "",
+        role: "Operator",
+        password: ""
+      });
+      void queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+    }
+  });
+
+  const updateUser = useMutation({
+    mutationFn: ({ userId, payload }: { userId: number; payload: Partial<ManagedUser> & { password?: string } }) =>
+      apiPatch<ManagedUser>(`/accounts/users/${userId}/`, payload),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["admin-users"] })
+  });
+
+  const removeUser = useMutation({
+    mutationFn: (userId: number) => apiDelete(`/accounts/users/${userId}/`),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["admin-users"] })
+  });
+
+  const users = asManagedUsers(usersQuery.data);
+  const actionError = usersQuery.error ?? createUser.error ?? updateUser.error ?? removeUser.error;
+
+  function submitNewUser(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!newUser.username.trim()) {
+      return;
+    }
+    createUser.mutate();
+  }
+
+  return (
+    <div className="admin-editor-grid">
+      <section className="table-panel admin-panel" aria-labelledby="user-admin-create-title">
+        <div className="panel-heading">
+          <div>
+            <p className="section-kicker">Users</p>
+            <h2 id="user-admin-create-title">Add User</h2>
+          </div>
+          <StatusBadge tone="active">{users.length} Users</StatusBadge>
+        </div>
+        <form className="admin-panel-body user-admin-form" onSubmit={submitNewUser}>
+          <label className="field-control">
+            <span>Username</span>
+            <input
+              required
+              value={newUser.username}
+              onChange={(event) => setNewUser((current) => ({ ...current, username: event.target.value }))}
+            />
+          </label>
+          <label className="field-control">
+            <span>Email</span>
+            <input
+              type="email"
+              value={newUser.email}
+              onChange={(event) => setNewUser((current) => ({ ...current, email: event.target.value }))}
+            />
+          </label>
+          <label className="field-control">
+            <span>First name</span>
+            <input
+              value={newUser.first_name}
+              onChange={(event) => setNewUser((current) => ({ ...current, first_name: event.target.value }))}
+            />
+          </label>
+          <label className="field-control">
+            <span>Last name</span>
+            <input
+              value={newUser.last_name}
+              onChange={(event) => setNewUser((current) => ({ ...current, last_name: event.target.value }))}
+            />
+          </label>
+          <label className="field-control">
+            <span>Role</span>
+            <select
+              value={newUser.role}
+              onChange={(event) => setNewUser((current) => ({ ...current, role: event.target.value }))}
+            >
+              {roleOptions.map((role) => (
+                <option key={role} value={role}>
+                  {role}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field-control">
+            <span>Temporary password</span>
+            <input
+              type="password"
+              value={newUser.password}
+              onChange={(event) => setNewUser((current) => ({ ...current, password: event.target.value }))}
+            />
+          </label>
+          <button className="button button-primary" type="submit" disabled={createUser.isPending}>
+            {createUser.isPending ? <Loader2 aria-hidden="true" size={16} /> : <Save aria-hidden="true" size={16} />}
+            Add User
+          </button>
+        </form>
+      </section>
+
+      <section className="table-panel admin-panel" aria-labelledby="user-admin-list-title">
+        <div className="panel-heading">
+          <div>
+            <p className="section-kicker">Roles</p>
+            <h2 id="user-admin-list-title">Edit Users</h2>
+          </div>
+          <StatusBadge tone={usersQuery.isLoading ? "neutral" : "ready"}>
+            {usersQuery.isLoading ? "Loading" : "Editable"}
+          </StatusBadge>
+        </div>
+        {actionError && (
+          <div className="admin-alert" role="alert">
+            <strong>User action failed</strong>
+            <span>{errorMessage(actionError)}</span>
+          </div>
+        )}
+        <div className="admin-panel-body user-admin-list">
+          {users.length === 0 ? (
+            <p className="admin-muted">
+              {usersQuery.isLoading ? "Loading users." : "No users found."}
+            </p>
+          ) : (
+            users.map((user) => (
+              <UserAdminRow
+                user={user}
+                key={user.id}
+                isSaving={updateUser.isPending || removeUser.isPending}
+                onSave={(payload) => updateUser.mutate({ userId: user.id, payload })}
+                onRemove={() => removeUser.mutate(user.id)}
+              />
+            ))
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function UserAdminRow({
+  user,
+  isSaving,
+  onSave,
+  onRemove
+}: {
+  user: ManagedUser;
+  isSaving: boolean;
+  onSave: (payload: Partial<ManagedUser>) => void;
+  onRemove: () => void;
+}) {
+  const [draft, setDraft] = useState({
+    username: user.username,
+    email: user.email ?? "",
+    first_name: user.first_name ?? "",
+    last_name: user.last_name ?? "",
+    role: user.roles[0] ?? (user.is_superuser ? "System Admin" : "Operator"),
+    is_active: user.is_active
+  });
+
+  return (
+    <form
+      className="user-admin-row"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSave({
+          username: draft.username.trim(),
+          email: draft.email.trim(),
+          first_name: draft.first_name.trim(),
+          last_name: draft.last_name.trim(),
+          roles: [draft.role],
+          is_active: draft.is_active,
+          is_superuser: draft.role === "System Admin"
+        });
+      }}
+    >
+      <label className="field-control">
+        <span>Username</span>
+        <input value={draft.username} onChange={(event) => setDraft((current) => ({ ...current, username: event.target.value }))} />
+      </label>
+      <label className="field-control">
+        <span>Email</span>
+        <input value={draft.email} onChange={(event) => setDraft((current) => ({ ...current, email: event.target.value }))} />
+      </label>
+      <label className="field-control">
+        <span>Name</span>
+        <input
+          value={[draft.first_name, draft.last_name].filter(Boolean).join(" ")}
+          onChange={(event) => {
+            const [firstName, ...rest] = event.target.value.split(" ");
+            setDraft((current) => ({
+              ...current,
+              first_name: firstName ?? "",
+              last_name: rest.join(" ")
+            }));
+          }}
+        />
+      </label>
+      <label className="field-control">
+        <span>Role</span>
+        <select value={draft.role} onChange={(event) => setDraft((current) => ({ ...current, role: event.target.value }))}>
+          {roleOptions.map((role) => (
+            <option key={role} value={role}>
+              {role}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="toggle-control">
+        <input
+          type="checkbox"
+          checked={draft.is_active}
+          onChange={(event) => setDraft((current) => ({ ...current, is_active: event.target.checked }))}
+        />
+        <span>Active</span>
+      </label>
+      <div className="admin-button-row">
+        <button className="button button-secondary" type="submit" disabled={isSaving}>
+          Save
+        </button>
+        <button className="button button-secondary" type="button" onClick={onRemove} disabled={isSaving || user.is_superuser}>
+          Remove
+        </button>
+      </div>
+    </form>
   );
 }
 
@@ -698,12 +1102,22 @@ const workspaceTabs: Array<{
   label: string;
   icon: typeof ShieldCheck;
 }> = [
-  { value: "current", label: "Current", icon: ShieldCheck },
-  { value: "draft", label: "Draft Editor", icon: Save },
+  { value: "home", label: "Overview", icon: ShieldCheck },
+  { value: "users", label: "Users", icon: ShieldCheck },
+  { value: "draft", label: "Templates", icon: Save },
   { value: "validation", label: "Validation", icon: FileCheck2 },
   { value: "publish", label: "Publish", icon: Rocket },
   { value: "history", label: "History", icon: History }
 ];
+
+const roleOptions = ["Operator", "Viewer", "Project Manager", "Configuration Admin", "System Admin"];
+
+function asManagedUsers(data?: ManagedUserResponse) {
+  if (Array.isArray(data)) {
+    return data;
+  }
+  return data?.results ?? [];
+}
 
 function normalizeConfigData(data: ConfigData): ConfigData {
   return {
@@ -808,3 +1222,4 @@ function defaultWorkflow(key?: string): WorkflowDefinition {
     release_rules: ["quality_approval_required"]
   };
 }
+

@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\projects\services.py
+# Type: python
+# Purpose: Projects domain for entity lifecycle and dependency graph orchestration.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: create_project, move_task, add_task_dependency, _lock_project_dependency_graph, _would_create_cycle
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from types import SimpleNamespace
 
 from django.db import transaction
@@ -236,3 +255,4 @@ def _project_task_snapshot(task):
             "completed_at",
         ],
     )
+

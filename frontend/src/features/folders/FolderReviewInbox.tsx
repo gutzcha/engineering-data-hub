@@ -1,3 +1,24 @@
+/*
+ * ===
+ * File Summary
+ * Path: frontend\src\features\folders\FolderReviewInbox.tsx
+ * Type: typescript
+ * Purpose: Frontend feature module implementing business flows and UI surfaces.
+ * Primary responsibilities:
+ * - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+ * - Core symbols: FolderReviewInbox
+ * Inputs:
+ * - Downstream and upstream interactions in the same domain.
+ * Outputs:
+ * - API payloads, records, side effects, or UI views depending on file role.
+ * Dependencies:
+ * - Shared runtime services and adjacent domain modules.
+ * Known risks:
+ * - Validate behavior after migrations, dependency upgrades, or contract changes.
+ * ===
+ * 
+ */
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CheckCircle2,
@@ -41,11 +62,27 @@ type LinkDocumentResponse = {
 
 type FolderEventResponse = FolderChangeEvent[] | { results?: FolderChangeEvent[] };
 
+type ManagedUser = {
+  id: number;
+  username: string;
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  role?: string;
+};
+
+type ManagedUserResponse = ManagedUser[] | { results?: ManagedUser[] };
+
 export function FolderReviewInbox() {
   const { eventId } = useParams();
   const queryClient = useQueryClient();
   const [assigneeByEvent, setAssigneeByEvent] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState("");
+
+  const usersQuery = useQuery({
+    queryKey: ["accounts", "users", "folder-review"],
+    queryFn: () => apiGet<ManagedUserResponse>("/accounts/users/")
+  });
 
   const eventsQuery = useQuery({
     queryKey: ["folder-events", "pending"],
@@ -88,6 +125,7 @@ export function FolderReviewInbox() {
   });
 
   const events = itemsFromResponse(eventsQuery.data);
+  const assignableUsers = usersFromResponse(usersQuery.data);
   const selectedEvent = eventId
     ? eventDetailQuery.data ?? events.find((event) => String(event.id) === eventId)
     : undefined;
@@ -218,7 +256,7 @@ export function FolderReviewInbox() {
                     </button>
                     <label className="field-control folder-event-assignee">
                       <span>Assign</span>
-                      <input
+                      <select
                         aria-label={`Assign user for event ${event.id}`}
                         value={assignmentValue}
                         onChange={(inputEvent) =>
@@ -227,8 +265,15 @@ export function FolderReviewInbox() {
                             [String(event.id)]: inputEvent.target.value
                           }))
                         }
-                        placeholder="User ID"
-                      />
+                        disabled={usersQuery.isLoading}
+                      >
+                        <option value="">Select assignee</option>
+                        {assignableUsers.map((user) => (
+                          <option value={String(user.id)} key={user.id}>
+                            {userDisplayName(user)}
+                          </option>
+                        ))}
+                      </select>
                     </label>
                     <button
                       className="button button-secondary"
@@ -265,6 +310,19 @@ function itemsFromResponse(response?: FolderEventResponse) {
   return response?.results ?? [];
 }
 
+function usersFromResponse(response?: ManagedUserResponse) {
+  if (Array.isArray(response)) {
+    return response;
+  }
+  return response?.results ?? [];
+}
+
+function userDisplayName(user: ManagedUser) {
+  const fullName = [user.first_name, user.last_name].filter(Boolean).join(" ").trim();
+  const name = fullName || user.username || user.email || String(user.id);
+  return user.role ? `${name} (${user.role})` : name;
+}
+
 function formatDateTime(value?: string) {
   if (!value) {
     return "Not recorded";
@@ -282,3 +340,4 @@ function humanize(value: string) {
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Folder review request failed.";
 }
+

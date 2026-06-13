@@ -1,3 +1,23 @@
+# ===
+# File Summary
+# Path: backend\apps\records\views.py
+# Type: python
+# Purpose: Records domain for core traceability records, validation, and coding constraints.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: IsAuthenticated, has_permission, RecordViewSet, get_queryset, list
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
+from django.db.models import Q
 from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
@@ -30,9 +50,16 @@ class RecordViewSet(viewsets.ModelViewSet):
 
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
+        query = (request.query_params.get("q") or "").strip()
         object_type_key = self.request.query_params.get("object_type_key")
         if object_type_key and not user_has_view_scope(request.user, object_type_key):
             raise PermissionDenied("You do not have permission to view this object type.")
+        if query:
+            queryset = queryset.filter(
+                Q(code__icontains=query)
+                | Q(title__icontains=query)
+                | Q(data__icontains=query)
+            )
         queryset = records_user_can_view(request.user, queryset)
         page = self.paginate_queryset(queryset)
         if page is not None:
@@ -130,3 +157,4 @@ class RecordViewSet(viewsets.ModelViewSet):
             if request.data.get("code") and not user_can(request.user, "admin", object_type_key):
                 raise PermissionDenied("Manual record codes require admin permission.")
         return super().create(request, *args, **kwargs)
+

@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\records\codes.py
+# Type: python
+# Purpose: Records domain for core traceability records, validation, and coding constraints.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: render_code_pattern, replace_sequence, generate_record_code, validate_code_pattern
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 import re
 
 from django.db import transaction
@@ -44,3 +63,4 @@ def validate_code_pattern(pattern: str) -> None:
         raise serializers.ValidationError(
             {"code_pattern": ["Code pattern must include a sequence token."]}
         )
+

@@ -1,3 +1,24 @@
+/*
+ * ===
+ * File Summary
+ * Path: frontend\src\features\projects\ProjectDetail.tsx
+ * Type: typescript
+ * Purpose: Frontend feature module implementing business flows and UI surfaces.
+ * Primary responsibilities:
+ * - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+ * - Core symbols: ProjectDetail
+ * Inputs:
+ * - Downstream and upstream interactions in the same domain.
+ * Outputs:
+ * - API payloads, records, side effects, or UI views depending on file role.
+ * Dependencies:
+ * - Shared runtime services and adjacent domain modules.
+ * Known risks:
+ * - Validate behavior after migrations, dependency upgrades, or contract changes.
+ * ===
+ * 
+ */
+
 import { useQuery } from "@tanstack/react-query";
 import { ClipboardList, FileText, History, Link2, Loader2, PanelsTopLeft } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -5,6 +26,7 @@ import { Link, useParams } from "react-router-dom";
 
 import { StatusBadge } from "../../components/StatusBadge";
 import { apiGet } from "../../lib/api";
+import { DocumentPanel, type DocumentItem } from "../documents/DocumentPanel";
 import { ProjectBoard } from "./ProjectBoard";
 import type { ProjectBoardPayload, ProjectSummary } from "./ProjectBoard";
 import { ProjectTimeline } from "./ProjectTimeline";
@@ -18,6 +40,8 @@ type TimelinePayload = {
 };
 
 type ProjectDetailSummary = ProjectSummary & { record?: string | number };
+
+type ProjectDocumentListResponse = DocumentItem[] | { results?: DocumentItem[] };
 
 type ProjectTab = "overview" | "board" | "timeline" | "dependencies" | "linked" | "documents" | "audit";
 
@@ -47,10 +71,18 @@ export function ProjectDetail() {
     enabled: Boolean(projectId)
   });
 
-  const project = useMemo<ProjectDetailSummary>(
-    () => timelineQuery.data?.project ?? boardQuery.data?.project ?? { id: projectId },
-    [boardQuery.data?.project, projectId, timelineQuery.data?.project]
-  );
+  const project = useMemo<ProjectDetailSummary>(() => {
+    const boardProject = boardQuery.data?.project as ProjectDetailSummary | undefined;
+    const timelineProject = timelineQuery.data?.project as ProjectDetailSummary | undefined;
+
+    return {
+      id: projectId,
+      ...boardProject,
+      ...timelineProject,
+      record: timelineProject?.record ?? boardProject?.record,
+      record_code: timelineProject?.record_code ?? boardProject?.record_code
+    };
+  }, [boardQuery.data?.project, projectId, timelineQuery.data?.project]);
 
   const title = project.title ?? project.name ?? project.code ?? `Project ${project.id ?? projectId}`;
   const boardTaskCount =
@@ -108,9 +140,9 @@ export function ProjectDetail() {
       {activeTab === "board" && <ProjectBoard projectId={projectId} />}
       {activeTab === "timeline" && <ProjectTimeline projectId={projectId} />}
       {activeTab === "dependencies" && <ProjectTimeline projectId={projectId} mode="dependencies" />}
-      {activeTab === "linked" && <LinkedRecordsPanel recordId={timelineQuery.data?.project?.record} />}
-      {activeTab === "documents" && <DocumentsPanel />}
-      {activeTab === "audit" && <AuditPanel />}
+      {activeTab === "linked" && <LinkedRecordsPanel recordId={project?.record} />}
+      {activeTab === "documents" && <DocumentsPanel recordId={project?.record} />}
+      {activeTab === "audit" && <AuditPanel recordId={project?.record} />}
     </div>
   );
 }
@@ -187,7 +219,28 @@ function LinkedRecordsPanel({ recordId }: { recordId?: string | number }) {
   );
 }
 
-function DocumentsPanel() {
+function DocumentsPanel({ recordId }: { recordId?: string | number }) {
+  const documentsQuery = useQuery({
+    queryKey: ["documents", "project", recordId],
+    queryFn: () => apiGet<ProjectDocumentListResponse>(`/documents/?owner_record=${recordId}`),
+    enabled: Boolean(recordId)
+  });
+  const documents = projectDocumentsFromResponse(documentsQuery.data);
+
+  if (recordId) {
+    return (
+      <>
+        {documentsQuery.error && (
+          <div className="admin-alert" role="alert">
+            <strong>Project documents unavailable</strong>
+            <span>{errorMessage(documentsQuery.error)}</span>
+          </div>
+        )}
+        <DocumentPanel documents={documents} ownerRecordId={recordId} />
+      </>
+    );
+  }
+
   return (
     <section className="table-panel detail-panel" aria-labelledby="project-documents-title">
       <div className="panel-heading">
@@ -198,13 +251,25 @@ function DocumentsPanel() {
         <FileText aria-hidden="true" size={18} />
       </div>
       <div className="record-panel-body document-list">
-        <p className="admin-muted">Project documents are not available from the current project endpoints.</p>
+        <p className="admin-muted">
+          This project is not linked to a source record yet. Link a project record to enable controlled document actions.
+        </p>
       </div>
     </section>
   );
 }
 
-function AuditPanel() {
+function projectDocumentsFromResponse(response?: ProjectDocumentListResponse) {
+  if (!response) {
+    return [];
+  }
+  if (Array.isArray(response)) {
+    return response;
+  }
+  return response.results ?? [];
+}
+
+function AuditPanel({ recordId }: { recordId?: string | number }) {
   return (
     <section className="table-panel detail-panel" aria-labelledby="project-audit-title">
       <div className="panel-heading">
@@ -215,7 +280,20 @@ function AuditPanel() {
         <History aria-hidden="true" size={18} />
       </div>
       <div className="record-panel-body event-list" role="list">
-        <p className="admin-muted">Project audit events are not available from the current project endpoints.</p>
+        {recordId ? (
+          <div className="record-action-row">
+            <Link className="button button-primary" to={`/records/${recordId}`}>
+              Open source record history
+            </Link>
+            <Link className="button button-secondary" to="/audit">
+              Open audit workspace
+            </Link>
+          </div>
+        ) : (
+          <p className="admin-muted">
+            This project is not linked to a source record yet. Link a project record to review its audit history.
+          </p>
+        )}
       </div>
     </section>
   );
@@ -245,3 +323,4 @@ function statusTone(status?: string) {
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Project request failed.";
 }
+

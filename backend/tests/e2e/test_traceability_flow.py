@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\tests\e2e\test_traceability_flow.py
+# Type: python
+# Purpose: Backend test suite validating domain invariants and API behavior.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: post_json, assert_status, system_admin, starter_config, extracted_spec_text
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 import json
 
 import pytest
@@ -400,3 +419,4 @@ def _pdf_with_text(text):
     assert text in (PdfReader(buffer).pages[0].extract_text() or "")
     buffer.seek(0)
     return buffer.read()
+

@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\audit\views.py
+# Type: python
+# Purpose: Audit service for immutable audit log capture and retrieval APIs.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: IsAuthenticated, has_permission, AuditEventSerializer, Meta, AuditEventListView
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from django.contrib.auth.models import AnonymousUser
 from django.shortcuts import get_object_or_404
 from rest_framework import permissions, serializers, status
@@ -238,3 +257,4 @@ def _is_system_admin(user):
     if not user or not getattr(user, "is_authenticated", False):
         return False
     return user.is_superuser or user.groups.filter(name=SYSTEM_ADMIN_ROLE).exists()
+

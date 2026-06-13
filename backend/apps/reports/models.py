@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\reports\models.py
+# Type: python
+# Purpose: Reports domain for query definitions, payload shaping, and saved reporting views.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: SavedView, Meta, __str__, Dashboard, DashboardWidget
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from django.conf import settings
 from django.db import models
 
@@ -77,3 +96,4 @@ class DashboardWidget(models.Model):
 
     def __str__(self):
         return f"{self.dashboard}: {self.title}"
+

@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\workflows\engine.py
+# Type: python
+# Purpose: Workflow domain for task models, engine execution, and worker scheduling.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: WorkflowTransitionError, WorkflowGuardError, __init__, perform_transition, validate_guards
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from django.contrib.auth import get_user_model
 from django.db import transaction
 
@@ -222,3 +241,4 @@ def _workflow_instance_snapshot(instance):
             "updated_by_id",
         ],
     )
+

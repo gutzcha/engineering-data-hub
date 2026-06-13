@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\relationships\views.py
+# Type: python
+# Purpose: Relationships domain for entity graph APIs and relationship operations.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: IsAuthenticated, has_permission, RelationshipViewSet, perform_create, perform_destroy
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from rest_framework import mixins, permissions, viewsets
 from rest_framework.exceptions import PermissionDenied
 
@@ -83,3 +102,4 @@ def _relationship_snapshot(relationship):
         "target_object_type_key": relationship.target_record.object_type_key,
         "data": relationship.data.copy(),
     }
+

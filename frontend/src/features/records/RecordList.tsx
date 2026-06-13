@@ -1,3 +1,23 @@
+/*
+ * ===
+ * File Summary
+ * Path: frontend\src\features\records\RecordList.tsx
+ * Type: typescript
+ * Purpose: Frontend feature module implementing business flows and UI surfaces.
+ * Primary responsibilities:
+ * - Dynamic record queue with runtime status suggestions and stable table rendering.
+ * Inputs:
+ * - Downstream and upstream interactions in the same domain.
+ * Outputs:
+ * - API payloads, records, side effects, or UI views depending on file role.
+ * Dependencies:
+ * - Shared runtime services and adjacent domain modules.
+ * Known risks:
+ * - Validate behavior after migrations, dependency upgrades, or contract changes.
+ * ===
+ * 
+ */
+
 import { useQuery } from "@tanstack/react-query";
 import { Filter, Plus, Search, SlidersHorizontal } from "lucide-react";
 import type { FormEvent } from "react";
@@ -7,6 +27,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { DataTable } from "../../components/DataTable";
 import { StatusBadge } from "../../components/StatusBadge";
 import { apiGet } from "../../lib/api";
+import { buildSearchPageUrl } from "../search/searchUrl";
 import { ConfigData } from "./DynamicRecordForm";
 
 type ConfigVersion = {
@@ -14,6 +35,10 @@ type ConfigVersion = {
     saved_views?: SavedView[];
     dashboards?: DashboardLink[];
   };
+};
+
+type PaginatedRecordList = {
+  results?: RecordListItem[];
 };
 
 type RecordListItem = {
@@ -44,13 +69,16 @@ type DashboardLink = {
   filters?: Record<string, string>;
 };
 
+const DEFAULT_RECORD_STATUSES = [
+  "released",
+  "draft"
+];
+
 export function RecordList() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [searchText, setSearchText] = useState(searchParams.get("q") ?? "");
   const objectTypeFilter = searchParams.get("object_type_key") ?? "";
   const statusFilter = searchParams.get("status") ?? "";
-  const savedViewFilter = searchParams.get("saved_view") ?? "";
-  const dashboardFilter = searchParams.get("dashboard") ?? "";
 
   const configQuery = useQuery({
     queryKey: ["config", "active"],
@@ -58,16 +86,24 @@ export function RecordList() {
   });
 
   const recordsQuery = useQuery({
-    queryKey: ["records", objectTypeFilter, statusFilter, searchParams.get("q"), savedViewFilter, dashboardFilter],
-    queryFn: () => apiGet<RecordListItem[]>(`/records/${recordsQueryString(searchParams)}`)
+    queryKey: ["records", objectTypeFilter, statusFilter, searchParams.get("q")],
+    queryFn: () => apiGet<RecordListItem[] | PaginatedRecordList>(`/records/${recordsQueryString(searchParams)}`)
   });
 
+  const rawRecords = useMemo(() => asList(recordsQuery.data), [recordsQuery.data]);
   const objectTypes = configQuery.data?.data?.object_types ?? [];
-  const savedViews = configQuery.data?.data?.saved_views ?? [];
-  const dashboards = configQuery.data?.data?.dashboards ?? [];
-  const records = useMemo(
-    () => filterRecords(recordsQuery.data ?? [], searchParams.get("q") ?? ""),
-    [recordsQuery.data, searchParams]
+  const records = useMemo(() => filterRecords(rawRecords, searchParams.get("q") ?? ""), [rawRecords, searchParams]);
+  const fallbackStatusRows = useMemo(
+    () =>
+      DEFAULT_RECORD_STATUSES.map((status) => ({
+        status,
+        id: `fallback-${status}`
+      })) as Array<RecordListItem & { status: string }>,
+    []
+  );
+  const statusOptions = useMemo(
+    () => uniqueSortedOptions([...rawRecords, ...fallbackStatusRows], (record) => record.status),
+    [rawRecords]
   );
 
   function updateFilter(key: string, value: string) {
@@ -93,10 +129,18 @@ export function RecordList() {
           <h1 id="records-title">Records</h1>
         </div>
         <div className="header-actions">
-          <button className="button button-secondary" type="button">
+          <Link
+            className="button button-secondary"
+            to={buildSearchPageUrl({
+              type: "records",
+              q: searchText,
+              status: statusFilter,
+              object_type_key: objectTypeFilter
+            })}
+          >
             <SlidersHorizontal aria-hidden="true" size={16} />
-            Configure View
-          </button>
+            Advanced Search
+          </Link>
           <Link className="button button-primary" to="/records/new">
             <Plus aria-hidden="true" size={16} />
             New Record
@@ -118,6 +162,18 @@ export function RecordList() {
             <Search aria-hidden="true" size={16} />
             Search
           </button>
+          <Link
+            className="button button-primary"
+            to={buildSearchPageUrl({
+              type: "records",
+              q: searchText,
+              status: statusFilter,
+              object_type_key: objectTypeFilter
+            })}
+          >
+            <Search aria-hidden="true" size={16} />
+            Search Hub
+          </Link>
         </form>
         <div className="filter-grid">
           <FilterSelect
@@ -132,40 +188,24 @@ export function RecordList() {
           <FilterSelect
             label="Status"
             value={statusFilter}
-            options={["draft", "review", "released", "blocked"].map((status) => ({
-              value: status,
-              label: humanize(status)
-            }))}
+            options={[
+              { value: "", label: "Any status" },
+              ...statusOptions.map((status) => ({
+                value: status,
+                label: status
+              }))
+            ]}
             onChange={(value) => updateFilter("status", value)}
-          />
-          <FilterSelect
-            label="Saved view"
-            value={savedViewFilter}
-            options={savedViews.map((view) => ({
-              value: String(view.key ?? view.id),
-              label: view.label ?? view.name ?? String(view.key ?? view.id)
-            }))}
-            onChange={(value) => updateFilter("saved_view", value)}
-          />
-          <FilterSelect
-            label="Dashboard link"
-            value={dashboardFilter}
-            options={dashboards.map((dashboard) => ({
-              value: String(dashboard.key ?? dashboard.id),
-              label: dashboard.label ?? dashboard.name ?? String(dashboard.key ?? dashboard.id)
-            }))}
-            onChange={(value) => updateFilter("dashboard", value)}
           />
         </div>
         <div className="active-filter-row" aria-label="Active record filters">
-          {[objectTypeFilter, statusFilter, savedViewFilter, dashboardFilter].filter(Boolean).length === 0 ? (
-            <span>No saved view or dashboard filters applied.</span>
+          {[objectTypeFilter, statusFilter, searchParams.get("q")].filter(Boolean).length === 0 ? (
+            <span>No record filters applied.</span>
           ) : (
             <>
               {objectTypeFilter && <StatusBadge tone="active">Type: {objectTypeFilter}</StatusBadge>}
               {statusFilter && <StatusBadge tone="review">Status: {statusFilter}</StatusBadge>}
-              {savedViewFilter && <StatusBadge tone="ready">View: {savedViewFilter}</StatusBadge>}
-              {dashboardFilter && <StatusBadge tone="active">Dashboard: {dashboardFilter}</StatusBadge>}
+              {searchParams.get("q") && <StatusBadge tone="ready">Query: {searchParams.get("q")}</StatusBadge>}
             </>
           )}
         </div>
@@ -183,7 +223,7 @@ export function RecordList() {
         </div>
         <DataTable
           data={records}
-          emptyMessage="No records match the selected filters."
+          emptyMessage={recordsQuery.isLoading ? "Loading records." : "No records match the selected filters."}
           columns={[
             {
               accessorKey: "code",
@@ -217,6 +257,21 @@ export function RecordList() {
               accessorKey: "updated_at",
               header: "Updated",
               cell: ({ row }) => formatDateTime(row.original.updated_at)
+            },
+            {
+              id: "search",
+              header: "Find",
+              cell: ({ row }) => (
+                <Link
+                  className="text-link"
+                  to={buildSearchPageUrl({
+                    type: "records",
+                    q: row.original.code ?? row.original.title ?? String(row.original.id)
+                  })}
+                >
+                  Search
+                </Link>
+              )
             }
           ]}
         />
@@ -260,7 +315,7 @@ function FilterSelect({
 function recordsQueryString(searchParams: URLSearchParams) {
   const params = new URLSearchParams();
 
-  ["object_type_key", "status", "q", "saved_view", "dashboard"].forEach((key) => {
+  ["object_type_key", "status", "q"].forEach((key) => {
     const value = searchParams.get(key);
     if (value) {
       params.set(key, value);
@@ -269,6 +324,18 @@ function recordsQueryString(searchParams: URLSearchParams) {
 
   const query = params.toString();
   return query ? `?${query}` : "";
+}
+
+function asList(items?: RecordListItem[] | PaginatedRecordList) {
+  if (Array.isArray(items)) {
+    return items;
+  }
+
+  return items?.results ?? [];
+}
+
+function uniqueSortedOptions<T>(rows: T[], pick: (row: T) => string | undefined) {
+  return Array.from(new Set(rows.map((row) => pick(row)).filter(Boolean))).sort() as string[];
 }
 
 function filterRecords(records: RecordListItem[], search: string) {
@@ -310,10 +377,6 @@ function formatDateTime(value?: string) {
     dateStyle: "medium",
     timeStyle: "short"
   }).format(new Date(value));
-}
-
-function humanize(value: string) {
-  return value.replace(/[_-]+/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
 function errorMessage(error: unknown) {

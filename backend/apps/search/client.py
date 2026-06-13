@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\search\client.py
+# Type: python
+# Purpose: Search domain for indexing payload generation and search query APIs.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: SearchClient, __init__, enabled, add_documents, search
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 import json
 import logging
 from urllib import error, parse, request
@@ -75,3 +94,4 @@ class SearchClient:
 
 def get_search_client():
     return SearchClient()
+

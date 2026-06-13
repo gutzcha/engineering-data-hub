@@ -1,3 +1,24 @@
+<!--
+===
+File Summary
+Path: docs\release-checklist.md
+Type: markdown
+Purpose: Release control checklist and rollout gate documentation.
+Primary responsibilities:
+- Domain behavior is summarized for fast onboarding and avoids full-file reread.
+- Core symbols: Release Checklist
+Inputs:
+- Downstream and upstream interactions in the same domain.
+Outputs:
+- API payloads, records, side effects, or UI views depending on file role.
+Dependencies:
+- Shared runtime services and adjacent domain modules.
+Known risks:
+- Validate behavior after migrations, dependency upgrades, or contract changes.
+===
+
+-->
+
 # Release Checklist
 
 Use this checklist for pilot cutover, production updates, and release-candidate validation. Record command output, timestamps, and the person who performed each step in the change ticket.
@@ -115,3 +136,4 @@ ALLOW_E2E_USER_SEEDING=true E2E_USERNAME=<test-user> E2E_PASSWORD=<test-password
 - [ ] Backup and rollback path are approved.
 - [ ] Release owner signs off.
 - [ ] Pilot or production users are notified that the release is ready.
+

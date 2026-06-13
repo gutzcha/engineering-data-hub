@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\tests\records\test_codes.py
+# Type: python
+# Purpose: Backend test suite validating domain invariants and API behavior.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: test_render_code_pattern_supports_static_prefix_and_padded_sequence, test_render_code_pattern_supports_year_and_sequence_width, test_generate_record_code_increments_sequence_per_object_type_and_pattern, test_generate_record_code_rejects_patterns_without_sequence_token
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from datetime import UTC, datetime
 
 import pytest
@@ -43,3 +62,4 @@ def test_generate_record_code_rejects_patterns_without_sequence_token():
         generate_record_code("product", "STATIC")
 
     assert error.value.detail["code_pattern"][0] == "Code pattern must include a sequence token."
+

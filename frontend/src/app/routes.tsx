@@ -1,3 +1,24 @@
+/*
+ * ===
+ * File Summary
+ * Path: frontend\src\app\routes.tsx
+ * Type: typescript
+ * Purpose: Frontend application shell and route composition for authenticated screens.
+ * Primary responsibilities:
+ * - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+ * - Core symbols: NavigationItem, navigationItems, AppRoutes
+ * Inputs:
+ * - Downstream and upstream interactions in the same domain.
+ * Outputs:
+ * - API payloads, records, side effects, or UI views depending on file role.
+ * Dependencies:
+ * - Shared runtime services and adjacent domain modules.
+ * Known risks:
+ * - Validate behavior after migrations, dependency upgrades, or contract changes.
+ * ===
+ * 
+ */
+
 import {
   BarChart3,
   ClipboardCheck,
@@ -14,9 +35,9 @@ import {
   UploadCloud
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { Link, Navigate, Route, Routes, useParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { Link, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
 
-import { DataTable } from "../components/DataTable";
 import { StatusBadge } from "../components/StatusBadge";
 import { ConfigWorkspace } from "../features/admin-config/ConfigWorkspace";
 import { LoginPage } from "../features/auth/LoginPage";
@@ -34,7 +55,9 @@ import { RecordCreate } from "../features/records/RecordCreate";
 import { RecordDetail } from "../features/records/RecordDetail";
 import { RecordList } from "../features/records/RecordList";
 import { SearchPage } from "../features/search/SearchPage";
+import { buildSearchPageUrl } from "../features/search/searchUrl";
 import { TaskInbox } from "../features/workflows/TaskInbox";
+import { apiGet } from "../lib/api";
 
 export type NavigationItem = {
   label: string;
@@ -106,45 +129,93 @@ export const navigationItems: NavigationItem[] = [
   }
 ];
 
-type RecordQueueItem = {
-  id: string;
-  area: string;
-  owner: string;
-  status: "ready" | "review" | "blocked";
-  updated: string;
+type HomeMetricCard = {
+  key: string;
+  label: string;
+  value: number;
+  filter: {
+    status: string;
+  };
 };
 
-const recordQueue: RecordQueueItem[] = [
-  {
-    id: "PE-1042",
-    area: "Injection molding trials",
-    owner: "Materials Lab",
-    status: "review",
-    updated: "Today"
-  },
-  {
-    id: "PE-1038",
-    area: "Regrind characterization",
-    owner: "Process Engineering",
-    status: "ready",
-    updated: "Yesterday"
-  },
-  {
-    id: "PE-1029",
-    area: "Supplier resin dossier",
-    owner: "Quality",
-    status: "blocked",
-    updated: "Jun 4"
-  }
-];
+type HomeRecord = {
+  id: string;
+  code?: string;
+  title?: string;
+  status?: string;
+  object_type_key?: string;
+  project_id?: string;
+};
 
-const statusLabel: Record<RecordQueueItem["status"], string> = {
+type HomeOverviewPayload = {
+  cards: HomeMetricCard[];
+  recent_records: HomeRecord[];
+};
+
+const statusLabel: Record<string, string> = {
+  active: "Active",
   ready: "Ready",
-  review: "In Review",
-  blocked: "Blocked"
+  review: "Review",
+  blocked: "Blocked",
+  released: "Ready",
+  draft: "Ready",
+  completed: "Ready",
+  complete: "Ready",
+  neutral: "Ready",
+  default: "Ready"
+};
+
+const statusTone: Record<string, "active" | "review" | "blocked" | "ready" | "neutral"> = {
+  active: "active" as const,
+  review: "review" as const,
+  blocked: "blocked" as const,
+  ready: "ready" as const,
+  released: "ready" as const,
+  draft: "ready" as const,
+  completed: "ready" as const,
+  complete: "ready" as const,
+  neutral: "neutral" as const,
+  default: "neutral" as const
 };
 
 function HomePage() {
+  const navigate = useNavigate();
+  const homeQuery = useQuery({
+    queryKey: ["reports", "home-overview"],
+    queryFn: () => apiGet<HomeOverviewPayload>("/dashboards/home-overview/?limit=10")
+  });
+
+  const cards = homeQuery.data?.cards ?? [];
+  const recentRecords = homeQuery.data?.recent_records ?? [];
+
+  function navigateToSearch(card: HomeMetricCard) {
+    navigate(buildSearchPageUrl({ type: "records", status: card.filter?.status }));
+  }
+
+  function exportRecentRecords() {
+    if (homeQuery.isLoading || homeQuery.isError || recentRecords.length === 0) {
+      return;
+    }
+
+    const rows = [
+      ["Code", "Title", "Status", "Type"],
+      ...recentRecords.map((record) => [
+        record.code ?? record.id,
+        record.title ?? "",
+        record.status ?? "",
+        record.object_type_key ?? ""
+      ])
+    ];
+    const csv = rows.map((row) => row.map(csvCell).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "operational-overview-records.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="page-stack">
       <section className="workspace-header" aria-labelledby="overview-title">
@@ -153,9 +224,14 @@ function HomePage() {
           <h1 id="overview-title">Operational Overview</h1>
         </div>
         <div className="header-actions">
-          <button className="button button-secondary" type="button">
+          <button
+            className="button button-secondary"
+            type="button"
+            onClick={exportRecentRecords}
+            disabled={homeQuery.isLoading || homeQuery.isError || recentRecords.length === 0}
+          >
             <Download aria-hidden="true" size={16} />
-            Export
+            Export recent records
           </button>
           <Link className="button button-primary" to="/records/new">
             <Plus aria-hidden="true" size={16} />
@@ -165,10 +241,58 @@ function HomePage() {
       </section>
 
       <section className="metrics-grid" aria-label="Workspace metrics">
-        <Metric label="Open records" value="128" status="active" />
-        <Metric label="Pending review" value="17" status="review" />
-        <Metric label="Blocked tasks" value="4" status="blocked" />
-        <Metric label="Controlled documents" value="312" status="ready" />
+        {homeQuery.isLoading && (
+          <>
+            <article className="metric">
+              <Metric label="Loading" value="..." status="neutral" />
+            </article>
+            <article className="metric">
+              <Metric label="Loading" value="..." status="neutral" />
+            </article>
+            <article className="metric">
+              <Metric label="Loading" value="..." status="neutral" />
+            </article>
+            <article className="metric">
+              <Metric label="Loading" value="..." status="neutral" />
+            </article>
+          </>
+        )}
+
+        {homeQuery.isError && (
+          <article className="metric">
+            <span>Failed to load overview</span>
+            <strong>—</strong>
+            <StatusBadge tone="neutral">Unavailable</StatusBadge>
+          </article>
+        )}
+
+        {!homeQuery.isLoading &&
+          !homeQuery.isError &&
+          cards.map((card) => (
+            <button
+              className="metric"
+              key={card.key}
+              type="button"
+              aria-label={`Open search filtered by ${card.label}`}
+              onClick={() => navigateToSearch(card)}
+            >
+              <Metric
+                label={card.label}
+                value={String(card.value)}
+                status={statusTone[card.filter?.status] ?? statusTone.default}
+              />
+            </button>
+          ))}
+
+        {!homeQuery.isLoading &&
+          !homeQuery.isError &&
+          cards.length === 0 && (
+            <article className="metric">
+              <span>No metrics</span>
+              <strong>0</strong>
+              <StatusBadge tone="neutral">No data</StatusBadge>
+            </article>
+          )}
       </section>
 
       <section className="table-panel" aria-labelledby="queue-title">
@@ -177,38 +301,37 @@ function HomePage() {
             <p className="section-kicker">Queue</p>
             <h2 id="queue-title">Recent Record Activity</h2>
           </div>
-          <StatusBadge tone="review">Review Needed</StatusBadge>
+          <StatusBadge tone="review">
+            {homeQuery.isLoading ? "Loading" : `${recentRecords.length} items`}
+          </StatusBadge>
         </div>
-        <DataTable
-          data={recordQueue}
-          columns={[
-            {
-              accessorKey: "id",
-              header: "Record"
-            },
-            {
-              accessorKey: "area",
-              header: "Area"
-            },
-            {
-              accessorKey: "owner",
-              header: "Owner"
-            },
-            {
-              accessorKey: "status",
-              header: "Status",
-              cell: ({ getValue }) => (
-                <StatusBadge tone={getValue<RecordQueueItem["status"]>()}>
-                  {statusLabel[getValue<RecordQueueItem["status"]>()]}
+        {homeQuery.isLoading ? (
+          <p className="admin-muted">Loading recent records...</p>
+        ) : recentRecords.length === 0 ? (
+          <p className="admin-muted">No recent records match your current visibility filters.</p>
+        ) : (
+          <div className="search-result-list" role="list" aria-label="Recent records">
+            {recentRecords.map((record) => (
+              <Link
+                className="search-result"
+                to={homeRecordUrl(record)}
+                key={record.id}
+                aria-label={`Open ${record.code ?? record.id} ${record.title ?? ""}`}
+              >
+                <div>
+                  <strong>{record.code || record.id}</strong>
+                  <small>
+                    {record.title ?? "Untitled"}
+                    {record.object_type_key ? ` · ${record.object_type_key}` : ""}
+                  </small>
+                </div>
+                <StatusBadge tone={statusTone[record.status ?? ""] ?? "neutral"}>
+                  {statusLabel[record.status ?? ""] ?? statusLabel.default}
                 </StatusBadge>
-              )
-            },
-            {
-              accessorKey: "updated",
-              header: "Updated"
-            }
-          ]}
-        />
+              </Link>
+            ))}
+          </div>
+        )}
       </section>
     </div>
   );
@@ -221,26 +344,40 @@ function Metric({
 }: {
   label: string;
   value: string;
-  status: "active" | "ready" | "review" | "blocked";
+  status: "active" | "ready" | "review" | "blocked" | "neutral";
 }) {
   return (
-    <article className="metric">
+    <>
       <span>{label}</span>
       <strong>{value}</strong>
       <StatusBadge tone={status}>{statusLabelForMetric(status)}</StatusBadge>
-    </article>
+    </>
   );
 }
 
-function statusLabelForMetric(status: "active" | "ready" | "review" | "blocked") {
+function csvCell(value: string) {
+  const escaped = value.replace(/"/g, '""');
+  return `"${escaped}"`;
+}
+
+function statusLabelForMetric(status: "active" | "ready" | "review" | "blocked" | "neutral") {
   const labels = {
     active: "Active",
     ready: "Ready",
     review: "Review",
-    blocked: "Blocked"
+    blocked: "Blocked",
+    neutral: "Ready"
   };
 
   return labels[status];
+}
+
+function homeRecordUrl(record: HomeRecord) {
+  if (record.object_type_key === "project" && record.project_id) {
+    return `/projects/${record.project_id}`;
+  }
+
+  return `/records/${record.id}`;
 }
 
 function PlaceholderPage({ item }: { item: NavigationItem }) {
@@ -253,10 +390,10 @@ function PlaceholderPage({ item }: { item: NavigationItem }) {
           <p className="section-kicker">{item.description}</p>
           <h1 id={`${item.label}-title`}>{item.label}</h1>
         </div>
-        <button className="button button-secondary" type="button">
+        <Link className="button button-secondary" to={buildSearchPageUrl({ q: item.label })}>
           <SlidersHorizontal aria-hidden="true" size={16} />
-          Configure View
-        </button>
+          Open Search Hub
+        </Link>
       </section>
       <section className="empty-state">
         <Icon aria-hidden="true" size={28} />
@@ -362,14 +499,14 @@ export function AppRoutes() {
             ].includes(item.path)
         )
         .map((item) => (
-        <Route
-          key={item.path}
-          path={item.path}
-          element={
-            item.path === "/admin" ? <ConfigWorkspace /> : <PlaceholderPage item={item} />
-          }
-        />
-      ))}
+          <Route
+            key={item.path}
+            path={item.path}
+            element={
+              item.path === "/admin" ? <ConfigWorkspace /> : <PlaceholderPage item={item} />
+            }
+          />
+        ))}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

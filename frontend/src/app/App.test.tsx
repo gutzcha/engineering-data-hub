@@ -1,3 +1,24 @@
+/*
+ * ===
+ * File Summary
+ * Path: frontend\src\app\App.test.tsx
+ * Type: typescript
+ * Purpose: Frontend application shell and route composition for authenticated screens.
+ * Primary responsibilities:
+ * - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+ * - Core symbols: inferred from domain responsibilities
+ * Inputs:
+ * - Downstream and upstream interactions in the same domain.
+ * Outputs:
+ * - API payloads, records, side effects, or UI views depending on file role.
+ * Dependencies:
+ * - Shared runtime services and adjacent domain modules.
+ * Known risks:
+ * - Validate behavior after migrations, dependency upgrades, or contract changes.
+ * ===
+ * 
+ */
+
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -67,3 +88,4 @@ describe("App shell", () => {
     expect(styles).toMatch(/\.app-shell\s*{[^}]*grid-template-columns:\s*1fr/s);
   });
 });
+

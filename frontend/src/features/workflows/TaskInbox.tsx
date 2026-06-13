@@ -1,5 +1,26 @@
+/*
+ * ===
+ * File Summary
+ * Path: frontend\src\features\workflows\TaskInbox.tsx
+ * Type: typescript
+ * Purpose: Frontend feature module implementing business flows and UI surfaces.
+ * Primary responsibilities:
+ * - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+ * - Core symbols: WorkflowTask, TaskInbox
+ * Inputs:
+ * - Downstream and upstream interactions in the same domain.
+ * Outputs:
+ * - API payloads, records, side effects, or UI views depending on file role.
+ * Dependencies:
+ * - Shared runtime services and adjacent domain modules.
+ * Known risks:
+ * - Validate behavior after migrations, dependency upgrades, or contract changes.
+ * ===
+ * 
+ */
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, ClipboardCheck, Loader2, Search, SlidersHorizontal } from "lucide-react";
+import { CheckCircle2, ClipboardCheck, Loader2, SlidersHorizontal } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -151,10 +172,7 @@ export function TaskInbox({
               placeholder="Title, assignee, state, object"
             />
           </label>
-          <button className="button button-secondary" type="button" disabled>
-            <Search aria-hidden="true" size={16} />
-            Find
-          </button>
+          <span className="admin-muted">Filters update as you type.</span>
         </div>
         <div className="filter-grid">
           <label className="field-control">
@@ -235,12 +253,7 @@ export function TaskInbox({
             {
               accessorKey: "title",
               header: "Task",
-              cell: ({ row }) => (
-                <div className="task-title-cell">
-                  <strong>{taskTitle(row.original)}</strong>
-                  <span>{taskSubtitle(row.original)}</span>
-                </div>
-              )
+              cell: ({ row }) => <TaskTitleCell task={row.original} />
             },
             {
               id: "assignment",
@@ -302,6 +315,26 @@ export function TaskInbox({
 
 function taskTitle(task: WorkflowTask) {
   return task.title ?? task.name ?? task.summary ?? `Task ${task.id}`;
+}
+
+function TaskTitleCell({ task }: { task: WorkflowTask }) {
+  const href = taskHref(task);
+  const content = (
+    <>
+      <strong>{taskTitle(task)}</strong>
+      <span>{taskSubtitle(task)}</span>
+    </>
+  );
+
+  if (!href) {
+    return <div className="task-title-cell">{content}</div>;
+  }
+
+  return (
+    <Link className="task-title-cell task-title-link" to={href} aria-label={`Open ${taskTitle(task)}`}>
+      {content}
+    </Link>
+  );
 }
 
 function taskSubtitle(task: WorkflowTask) {
@@ -388,18 +421,26 @@ function isOverdue(task: WorkflowTask) {
 
 function taskHref(task: WorkflowTask) {
   const objectType = taskObjectType(task);
-  const objectId = taskRelatedId(task);
-
-  if (!objectId) {
-    return undefined;
-  }
 
   if (objectType === "document") {
+    const objectId = relationId(task.related_document) ?? task.related_object_id;
+    if (!objectId) {
+      return undefined;
+    }
     return `/documents/${objectId}`;
   }
 
   if (objectType === "project") {
+    const objectId = relationId(task.related_project) ?? task.related_object_id;
+    if (!objectId) {
+      return undefined;
+    }
     return `/projects/${objectId}`;
+  }
+
+  const objectId = relationId(task.related_record) ?? relationId(task.record) ?? task.related_object_id;
+  if (!objectId) {
+    return undefined;
   }
 
   return `/records/${objectId}`;
@@ -479,3 +520,4 @@ function humanize(value: string) {
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Workflow task request failed.";
 }
+

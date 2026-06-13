@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\tests\imports\test_excel_import.py
+# Type: python
+# Purpose: Backend test suite validating domain invariants and API behavior.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: user_factory, create_user, active_import_config, import_permissions, workbook_file
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from io import BytesIO
 
 import pytest
@@ -591,3 +610,4 @@ def test_project_status_export_respects_record_level_project_permissions(
     rows = list(load_workbook(BytesIO(response.content)).active.iter_rows(values_only=True))
     assert rows[1][:5] == ("PRJ-000010", "Visible Project", "active", 1, 1)
     assert all(row[0] != "PRJ-000011" for row in rows[1:])
+

@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\folders\templates.py
+# Type: python
+# Purpose: Folders domain handling templates, scans, change events, and review flows.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: RenderedFolderTemplate, paths, default_template_key, safe_path_segment, render_folder_template
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from dataclasses import dataclass
 import re
 
@@ -85,3 +104,4 @@ def render_folder_template(record, template_key=None):
     root = f"{root_name}/{record_folder}"
     children = [f"{root}/{child}" for child in TEMPLATE_CHILDREN[template_key]]
     return RenderedFolderTemplate(root=root, children=children)
+

@@ -1,3 +1,24 @@
+/*
+ * ===
+ * File Summary
+ * Path: frontend\src\features\admin-config\FolderTemplateEditor.tsx
+ * Type: typescript
+ * Purpose: Frontend feature module implementing business flows and UI surfaces.
+ * Primary responsibilities:
+ * - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+ * - Core symbols: FolderTemplateEditor
+ * Inputs:
+ * - Downstream and upstream interactions in the same domain.
+ * Outputs:
+ * - API payloads, records, side effects, or UI views depending on file role.
+ * Dependencies:
+ * - Shared runtime services and adjacent domain modules.
+ * Known risks:
+ * - Validate behavior after migrations, dependency upgrades, or contract changes.
+ * ===
+ * 
+ */
+
 import type { FolderTemplateDefinition } from "./ConfigWorkspace";
 
 type FolderTemplateEditorProps = {
@@ -66,3 +87,4 @@ function renderPath(pattern: string, sampleRecord: Record<string, string>) {
     return sampleRecord[key] ?? `{${key}}`;
   });
 }
+

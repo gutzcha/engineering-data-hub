@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\tests\projects\test_dependencies.py
+# Type: python
+# Purpose: Backend test suite validating domain invariants and API behavior.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: user_factory, create_user, active_project_config, project_permissions, post_json
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
@@ -204,3 +223,4 @@ def test_dependency_creation_locks_project_graph_before_insert(
 
     assert response.status_code == 201
     assert lock_calls == [project.pk]
+

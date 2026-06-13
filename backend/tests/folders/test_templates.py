@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\tests\folders\test_templates.py
+# Type: python
+# Purpose: Backend test suite validating domain invariants and API behavior.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: user_factory, create_user, product_record, raw_material_record, project_record
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
@@ -276,3 +295,4 @@ def test_folder_generation_converts_mkdir_race_to_collision_event(
         path="Products/PROD-000001_Clear_Film",
         matched_record=product_record,
     ).exists()
+

@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\relationships\serializers.py
+# Type: python
+# Purpose: Relationships domain for entity graph APIs and relationship operations.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: RelationshipSerializer, Meta, validate_data, validate, create
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from django.db import IntegrityError
 from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
@@ -69,3 +88,4 @@ class RelationshipSerializer(serializers.ModelSerializer):
             record_id=str(target_record.pk),
         ):
             raise PermissionDenied("You do not have permission to view the target record.")
+

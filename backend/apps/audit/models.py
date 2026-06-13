@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\audit\models.py
+# Type: python
+# Purpose: Audit service for immutable audit log capture and retrieval APIs.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: AuditEventQuerySet, update, delete, AuditEvent, Meta
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -53,3 +72,4 @@ class AuditEvent(models.Model):
 
     def __str__(self):
         return f"{self.action}: {self.object_type}:{self.object_id}"
+

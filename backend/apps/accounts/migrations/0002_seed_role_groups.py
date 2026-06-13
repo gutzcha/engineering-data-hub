@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\accounts\migrations\0002_seed_role_groups.py
+# Type: python
+# Purpose: Accounts service handling identity, roles, permissions, and authentication-facing APIs.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: create_role_groups, remove_role_groups, Migration
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from django.db import migrations
 
 
@@ -30,3 +49,4 @@ class Migration(migrations.Migration):
     operations = [
         migrations.RunPython(create_role_groups, remove_role_groups),
     ]
+

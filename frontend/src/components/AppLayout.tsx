@@ -1,3 +1,24 @@
+/*
+ * ===
+ * File Summary
+ * Path: frontend\src\components\AppLayout.tsx
+ * Type: typescript
+ * Purpose: Reusable UI component primitives used across feature screens.
+ * Primary responsibilities:
+ * - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+ * - Core symbols: AppLayout
+ * Inputs:
+ * - Downstream and upstream interactions in the same domain.
+ * Outputs:
+ * - API payloads, records, side effects, or UI views depending on file role.
+ * Dependencies:
+ * - Shared runtime services and adjacent domain modules.
+ * Known risks:
+ * - Validate behavior after migrations, dependency upgrades, or contract changes.
+ * ===
+ * 
+ */
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LogIn, LogOut } from "lucide-react";
 import { NavLink } from "react-router-dom";
@@ -75,8 +96,8 @@ export function AppLayout({ navigationItems, children }: AppLayoutProps) {
           </div>
           <div className="topbar-actions">
             <div className="topbar-meta" aria-label="Environment status">
-              <span>Dev</span>
-              <span>API: /api</span>
+              <span>Operational</span>
+              <span>Secure workspace</span>
             </div>
             {currentUser.isSuccess ? (
               <div className="topbar-user" aria-label="Current user">
@@ -104,3 +125,4 @@ export function AppLayout({ navigationItems, children }: AppLayoutProps) {
     </div>
   );
 }
+

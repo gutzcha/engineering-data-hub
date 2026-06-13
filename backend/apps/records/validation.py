@@ -1,6 +1,26 @@
+# ===
+# File Summary
+# Path: backend\apps\records\validation.py
+# Type: python
+# Purpose: Records domain for core traceability records, validation, and coding constraints.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: get_object_type_definition, validate_record_data, _validate_field_value, _validate_date, _validate_multi_choice
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from datetime import date
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from apps.config_registry.services import ALLOWED_FIELD_TYPES, get_active_config
@@ -106,7 +126,7 @@ def _validate_record_ref(field, value):
 
     try:
         record = Record.objects.get(pk=value)
-    except (Record.DoesNotExist, ValueError, TypeError):
+    except (Record.DoesNotExist, DjangoValidationError, ValueError, TypeError):
         return ["Referenced record does not exist."]
 
     target_object_type = field.get("target_object_type")
@@ -144,3 +164,4 @@ def _duplicate_unique_value(object_type_key, field_key, value, *, current_record
 
 def _is_blank(value):
     return value is None or value == "" or value == []
+

@@ -1,3 +1,24 @@
+/*
+ * ===
+ * File Summary
+ * Path: frontend\src\features\imports\ImportWizard.tsx
+ * Type: typescript
+ * Purpose: Frontend feature module implementing business flows and UI surfaces.
+ * Primary responsibilities:
+ * - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+ * - Core symbols: ImportWizard
+ * Inputs:
+ * - Downstream and upstream interactions in the same domain.
+ * Outputs:
+ * - API payloads, records, side effects, or UI views depending on file role.
+ * Dependencies:
+ * - Shared runtime services and adjacent domain modules.
+ * Known risks:
+ * - Validate behavior after migrations, dependency upgrades, or contract changes.
+ * ===
+ * 
+ */
+
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle,
@@ -73,6 +94,10 @@ type ApplyResult = {
   updated: number;
 };
 
+type ImportColumnPreviewResponse = {
+  columns?: string[];
+};
+
 const codeField: FieldDefinition = {
   key: "code",
   label: "Code"
@@ -88,6 +113,7 @@ export function ImportWizard() {
   const [applyResult, setApplyResult] = useState<ApplyResult | null>(null);
   const [createManagedFolders, setCreateManagedFolders] = useState(false);
   const [localError, setLocalError] = useState("");
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
 
   const configQuery = useQuery({
     queryKey: ["config", "active"],
@@ -158,7 +184,7 @@ export function ImportWizard() {
     }
   });
 
-  async function updateSourceFile(file?: File) {
+async function updateSourceFile(file?: File) {
     setSelectedFile(file ?? null);
     setDryRunResult(null);
     setApplyResult(null);
@@ -169,7 +195,15 @@ export function ImportWizard() {
       return;
     }
 
-    setSourceColumns(await columnsFromFile(file));
+    setIsPreviewLoading(true);
+    try {
+      setSourceColumns(await columnsFromFile(file));
+    } catch (error) {
+      setLocalError(errorMessage(error));
+      setSourceColumns([]);
+    } finally {
+      setIsPreviewLoading(false);
+    }
   }
 
   return (
@@ -449,12 +483,15 @@ function buildImportMapping(fieldMapping: Record<string, string>): ImportMapping
 }
 
 async function columnsFromFile(file: File) {
-  if (!file.name.toLowerCase().endsWith(".csv")) {
-    return [];
+  if (file.name.toLowerCase().endsWith(".csv")) {
+    const firstLine = (await readFileText(file)).split(/\r?\n/, 1)[0] ?? "";
+    return parseCsvLine(firstLine).filter(Boolean);
   }
 
-  const firstLine = (await readFileText(file)).split(/\r?\n/, 1)[0] ?? "";
-  return parseCsvLine(firstLine).filter(Boolean);
+  const formData = new FormData();
+  formData.append("source_file", file);
+  const result = await apiPost<ImportColumnPreviewResponse>("/imports/columns-preview/", formData);
+  return result.columns ?? [];
 }
 
 function readFileText(file: File) {
@@ -533,3 +570,4 @@ function humanize(value: string) {
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Import request failed.";
 }
+

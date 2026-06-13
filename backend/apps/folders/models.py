@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\folders\models.py
+# Type: python
+# Purpose: Folders domain handling templates, scans, change events, and review flows.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: ManagedFolder, State, Meta, __str__, FolderFileSnapshot
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from django.conf import settings
 from django.db import models
 
@@ -131,3 +150,4 @@ class FolderChangeEvent(models.Model):
 
     def __str__(self):
         return f"{self.event_type}: {self.path}"
+

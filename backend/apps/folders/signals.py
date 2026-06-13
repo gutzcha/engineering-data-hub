@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\folders\signals.py
+# Type: python
+# Purpose: Folders domain handling templates, scans, change events, and review flows.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: generate_default_managed_folder, _generate_folder, _record_generation_failed
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 import logging
 
 from django.conf import settings
@@ -45,3 +64,4 @@ def _record_generation_failed(record):
         review_status=FolderChangeEvent.ReviewStatus.PENDING,
     )
     enqueue_folder_event_index(event.pk)
+

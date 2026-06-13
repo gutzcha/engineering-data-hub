@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\tests\accounts\test_permissions.py
+# Type: python
+# Purpose: Backend test suite validating domain invariants and API behavior.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: user_factory, create_user, product_permissions, test_viewer_can_view_products_but_cannot_edit_them, test_engineer_can_create_and_edit_draft_products
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 import json
 
 import pytest
@@ -317,3 +336,4 @@ def test_only_admins_can_manage_record_permissions(client, user_factory):
     )
 
     assert response.status_code == 201
+

@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\projects\views.py
+# Type: python
+# Purpose: Projects domain for entity lifecycle and dependency graph orchestration.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: IsAuthenticated, has_permission, ProjectBoardView, get, ProjectTaskMoveView
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from django.db.models import Count, Sum
 from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
@@ -12,14 +31,56 @@ from apps.projects.models import (
     ProjectTask,
     ProjectTaskDependency,
 )
-from apps.projects.serializers import ProjectTaskDependencySerializer, ProjectTaskSerializer
+from apps.projects.serializers import (
+    ProjectListSerializer,
+    ProjectTaskDependencySerializer,
+    ProjectTaskSerializer,
+)
 from apps.projects.services import add_task_dependency, move_task
 from apps.records.models import Record
+
+
+def models_filter_query(query):
+    from django.db.models import Q
+
+    return (
+        Q(name__icontains=query)
+        | Q(description__icontains=query)
+        | Q(record__code__icontains=query)
+        | Q(record__title__icontains=query)
+    )
 
 
 class IsAuthenticated(permissions.BasePermission):
     def has_permission(self, request, view):
         return bool(request.user and request.user.is_authenticated and request.user.is_active)
+
+
+class ProjectListView(APIView):
+    permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "head", "options"]
+
+    def get(self, request):
+        queryset = Project.objects.select_related("record").all()
+        visible_project_record_ids = records_user_can_view(
+            request.user,
+            Record.objects.filter(object_type_key="project"),
+        ).values_list("pk", flat=True)
+        queryset = queryset.filter(record_id__in=visible_project_record_ids)
+
+        query = (request.query_params.get("q") or "").strip()
+        status_filter = (request.query_params.get("status") or "").strip()
+        record_filter = (request.query_params.get("record") or "").strip()
+        if query:
+            queryset = queryset.filter(
+                models_filter_query(query),
+            )
+        if status_filter:
+            queryset = queryset.filter(status__in=_split_csv(status_filter))
+        if record_filter:
+            queryset = queryset.filter(record_id__iexact=record_filter)
+
+        return Response(ProjectListSerializer(queryset, many=True).data, status=status.HTTP_200_OK)
 
 
 class ProjectBoardView(APIView):
@@ -193,6 +254,7 @@ def _serialize_project(project):
     return {
         "id": str(project.pk),
         "record": str(project.record_id),
+        "record_code": project.record.code,
         "name": project.name,
         "status": project.status,
     }
@@ -222,3 +284,8 @@ def _required_int(value, field_name):
         return int(value)
     except (TypeError, ValueError) as error:
         raise ValidationError({field_name: ["Expected an integer."]}) from error
+
+
+def _split_csv(raw):
+    return [value.strip().lower() for value in raw.split(",") if value.strip()]
+

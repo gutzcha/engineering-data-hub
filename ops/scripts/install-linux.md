@@ -1,3 +1,24 @@
+<!--
+===
+File Summary
+Path: ops\scripts\install-linux.md
+Type: markdown
+Purpose: Operational automation scripts and deployment helpers.
+Primary responsibilities:
+- Domain behavior is summarized for fast onboarding and avoids full-file reread.
+- Core symbols: Linux Server Install
+Inputs:
+- Downstream and upstream interactions in the same domain.
+Outputs:
+- API payloads, records, side effects, or UI views depending on file role.
+Dependencies:
+- Shared runtime services and adjacent domain modules.
+Known risks:
+- Validate behavior after migrations, dependency upgrades, or contract changes.
+===
+
+-->
+
 # Linux Server Install
 
 1. Install Docker Engine with the Compose plugin from your OS vendor or Docker's official packages.
@@ -12,3 +33,4 @@ docker compose -f compose.yaml exec backend python manage.py migrate
 ```
 
 Keep ports other than `443` off the host firewall. Expose `443` only on the VPN or internal network interface.
+

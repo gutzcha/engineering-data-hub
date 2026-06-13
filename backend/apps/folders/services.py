@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\folders\services.py
+# Type: python
+# Purpose: Folders domain handling templates, scans, change events, and review flows.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: ManagedFolderCollisionError, __init__, generate_managed_folder, managed_root, managed_path
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 import hashlib
 from pathlib import Path, PurePosixPath
 
@@ -165,3 +184,4 @@ def _managed_folder_snapshot(managed_folder):
             "last_scan_hash",
         ],
     )
+

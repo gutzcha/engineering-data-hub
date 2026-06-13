@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\search\tasks.py
+# Type: python
+# Purpose: Search domain for indexing payload generation and search query APIs.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: index_record, index_document_revision, index_folder_event, enqueue_record_index, enqueue_record_indexes
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from celery import shared_task
 from django.db import transaction
 
@@ -5,9 +24,11 @@ from apps.search.client import get_search_client
 from apps.search.indexers import (
     DOCUMENTS_INDEX,
     FOLDER_EVENTS_INDEX,
+    PROJECTS_INDEX,
     RECORDS_INDEX,
     build_document_revision_payload,
     build_folder_event_payload,
+    build_project_payload,
     build_record_payload,
 )
 
@@ -57,6 +78,20 @@ def index_folder_event(event_id):
     return client.add_documents(FOLDER_EVENTS_INDEX, [build_folder_event_payload(event)])
 
 
+@shared_task
+def index_project(project_id):
+    from apps.projects.models import Project
+
+    try:
+        project = Project.objects.select_related("record").get(pk=project_id)
+    except (Project.DoesNotExist, ValueError):
+        return None
+    client = get_search_client()
+    if not client.enabled:
+        return None
+    return client.add_documents(PROJECTS_INDEX, [build_project_payload(project)])
+
+
 def enqueue_record_index(record_id):
     transaction.on_commit(lambda: index_record.delay(str(record_id)))
 
@@ -83,10 +118,15 @@ def enqueue_folder_event_indexes(event_ids):
     transaction.on_commit(lambda: [index_folder_event.delay(event_id) for event_id in ids])
 
 
+def enqueue_project_index(project_id):
+    transaction.on_commit(lambda: index_project.delay(str(project_id)))
+
+
 @shared_task
 def rebuild_all_indexes():
     from apps.documents.models import DocumentRevision
     from apps.folders.models import FolderChangeEvent
+    from apps.projects.models import Project
     from apps.records.models import Record
 
     client = get_search_client()
@@ -94,7 +134,7 @@ def rebuild_all_indexes():
         return {"records": 0, "documents": 0, "folder_events": 0, "projects": 0}
 
     counts = {"records": 0, "documents": 0, "folder_events": 0, "projects": 0}
-    for index_name in (RECORDS_INDEX, DOCUMENTS_INDEX, FOLDER_EVENTS_INDEX):
+    for index_name in (RECORDS_INDEX, DOCUMENTS_INDEX, PROJECTS_INDEX, FOLDER_EVENTS_INDEX):
         client.delete_all_documents(index_name)
 
     for batch in _batched(Record.objects.all().iterator(), BATCH_SIZE):
@@ -108,6 +148,14 @@ def rebuild_all_indexes():
             [build_document_revision_payload(revision) for revision in batch],
         )
         counts["documents"] += len(batch)
+
+    project_queryset = Project.objects.select_related("record")
+    for batch in _batched(project_queryset.iterator(), BATCH_SIZE):
+        client.add_documents(
+            PROJECTS_INDEX,
+            [build_project_payload(project) for project in batch],
+        )
+        counts["projects"] += len(batch)
 
     event_queryset = FolderChangeEvent.objects.select_related("matched_record")
     for batch in _batched(event_queryset.iterator(), BATCH_SIZE):
@@ -129,3 +177,4 @@ def _batched(items, batch_size):
             batch = []
     if batch:
         yield batch
+

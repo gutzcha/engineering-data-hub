@@ -1,9 +1,31 @@
+/*
+ * ===
+ * File Summary
+ * Path: frontend\src\features\audit\AuditTimeline.tsx
+ * Type: typescript
+ * Purpose: Frontend feature module implementing business flows and UI surfaces.
+ * Primary responsibilities:
+ * - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+ * - Core symbols: AuditTimeline
+ * Inputs:
+ * - Downstream and upstream interactions in the same domain.
+ * Outputs:
+ * - API payloads, records, side effects, or UI views depending on file role.
+ * Dependencies:
+ * - Shared runtime services and adjacent domain modules.
+ * Known risks:
+ * - Validate behavior after migrations, dependency upgrades, or contract changes.
+ * ===
+ * 
+ */
+
 import { useQuery } from "@tanstack/react-query";
 import { History, Link as LinkIcon, Loader2 } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { StatusBadge } from "../../components/StatusBadge";
 import { apiGet } from "../../lib/api";
+import { buildSearchPageUrl } from "../search/searchUrl";
 
 type AuditEvent = {
   id: string | number;
@@ -83,6 +105,8 @@ export function AuditTimeline({ endpoint = "/audit/?limit=100", title = "Audit T
 }
 
 function AuditTimelineItem({ event }: { event: AuditEvent }) {
+  const href = objectHref(event);
+
   return (
     <article className="audit-item" role="listitem">
       <div className="audit-item-main">
@@ -93,8 +117,8 @@ function AuditTimelineItem({ event }: { event: AuditEvent }) {
       </div>
       <div className="audit-object-link">
         <LinkIcon aria-hidden="true" size={15} />
-        {objectHref(event) ? (
-          <Link className="text-link" to={objectHref(event) ?? "#"}>
+        {href ? (
+          <Link className="text-link" to={href}>
             {event.object_type}:{event.object_id}
           </Link>
         ) : (
@@ -153,7 +177,43 @@ function objectHref(event: AuditEvent) {
   if (event.object_type === "folderchangeevent") {
     return `/tasks/folder-events/${event.object_id}`;
   }
-  return undefined;
+  if (event.object_type === "project") {
+    return `/projects/${event.object_id}`;
+  }
+  if (event.object_type === "workflowinstance") {
+    const recordId = stringFromPayload(event.after, "record_id") ?? stringFromPayload(event.before, "record_id");
+    return recordId ? `/records/${recordId}` : buildSearchPageUrl({ q: `${event.object_type}:${event.object_id}` });
+  }
+  if (event.object_type === "workflowtask") {
+    const recordId =
+      stringFromPayload(event.after, "related_record_id") ??
+      stringFromPayload(event.before, "related_record_id") ??
+      stringFromPayload(event.after, "record_id") ??
+      stringFromPayload(event.before, "record_id");
+    return recordId ? `/records/${recordId}` : buildSearchPageUrl({ q: `${event.object_type}:${event.object_id}` });
+  }
+  if (event.object_type === "projecttask" || event.object_type === "projecttaskdependency") {
+    const projectId =
+      stringFromPayload(event.after, "project_id") ??
+      stringFromPayload(event.before, "project_id") ??
+      stringFromPayload(event.after, "project") ??
+      stringFromPayload(event.before, "project");
+    return projectId ? `/projects/${projectId}` : buildSearchPageUrl({ type: "projects", q: event.object_id });
+  }
+  if (event.object_type === "relationship") {
+    const source = stringFromPayload(event.after, "source_record_id") ?? stringFromPayload(event.before, "source_record_id");
+    const target = stringFromPayload(event.after, "target_record_id") ?? stringFromPayload(event.before, "target_record_id");
+    return buildSearchPageUrl({ type: "records", q: [source, target, event.object_id].filter(Boolean).join(" ") });
+  }
+  return buildSearchPageUrl({ q: `${event.object_type}:${event.object_id}` });
+}
+
+function stringFromPayload(payload: Record<string, unknown> | null | undefined, key: string) {
+  const value = payload?.[key];
+  if (value === null || value === undefined || value === "") {
+    return undefined;
+  }
+  return String(value);
 }
 
 function formatDateTime(value?: string) {
@@ -169,3 +229,4 @@ function formatDateTime(value?: string) {
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Audit request failed.";
 }
+
