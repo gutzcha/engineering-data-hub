@@ -21,6 +21,8 @@ Known risks:
 
 # Engineering Data Hub
 
+Self-hosted engineering data management for traceable records, controlled documents, workflow tasks, full-text search, configurable dashboards, and audit-ready operations.
+
 Engineering Data Hub is a self-contained local-server application for managing structured engineering records, controlled documents, project work, search, workflow tasks, audit history, and operational dashboards. It is designed for teams that need a traceable internal system of record without requiring host-level Python, Node, PostgreSQL, Redis, or search service installs.
 
 This project was originally built to help a friend organize a real engineering operation, but it is published as a general-purpose tool that anyone can adapt, run, and extend.
