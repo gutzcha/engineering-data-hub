@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\records\serializers.py
+# Type: python
+# Purpose: Records domain for core traceability records, validation, and coding constraints.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: RecordSerializer, Meta, validate, create, update
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from django.db import IntegrityError, transaction
 from rest_framework import serializers
 
@@ -182,3 +201,4 @@ def _lock_records_for_dynamic_unique_fields(object_type_key):
     # application layer by serializing writes through one lock row per object type.
     RecordObjectTypeLock.objects.get_or_create(object_type_key=object_type_key)
     RecordObjectTypeLock.objects.select_for_update().get(object_type_key=object_type_key)
+

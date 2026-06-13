@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\accounts\permissions.py
+# Type: python
+# Purpose: Accounts service handling identity, roles, permissions, and authentication-facing APIs.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: is_system_admin, is_configuration_admin, user_can, records_user_can_view, user_has_view_scope
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 SYSTEM_ADMIN_ROLE = "System Admin"
 CONFIGURATION_ADMIN_ROLE = "Configuration Admin"
 
@@ -111,3 +130,4 @@ def user_has_view_scope(user, object_type_key: str) -> bool:
 
 def _is_active_authenticated_user(user):
     return bool(user and getattr(user, "is_authenticated", False) and user.is_active)
+

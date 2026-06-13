@@ -1,4 +1,23 @@
-from django.db.models import Count, Q, Sum
+# ===
+# File Summary
+# Path: backend\apps\projects\views.py
+# Type: python
+# Purpose: Projects domain for entity lifecycle and dependency graph orchestration.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: IsAuthenticated, has_permission, ProjectBoardView, get, ProjectTaskMoveView
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
+from django.db.models import Count, Sum
 from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 from rest_framework import permissions, status
@@ -7,29 +26,61 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.permissions import records_user_can_view, user_has_view_scope, user_can
-from apps.audit.services import record_audit_event, snapshot_model
 from apps.projects.models import (
     Project,
-    ProjectEvent,
     ProjectTask,
     ProjectTaskDependency,
 )
 from apps.projects.serializers import (
-    ProjectCreateSerializer,
-    ProjectEventSerializer,
-    ProjectSerializer,
+    ProjectListSerializer,
     ProjectTaskDependencySerializer,
     ProjectTaskSerializer,
-    ProjectTaskUpdateSerializer,
-    ProjectUpdateSerializer,
 )
-from apps.projects.services import add_task_dependency, create_project, move_task, update_project
+from apps.projects.services import add_task_dependency, move_task
 from apps.records.models import Record
+
+
+def models_filter_query(query):
+    from django.db.models import Q
+
+    return (
+        Q(name__icontains=query)
+        | Q(description__icontains=query)
+        | Q(record__code__icontains=query)
+        | Q(record__title__icontains=query)
+    )
 
 
 class IsAuthenticated(permissions.BasePermission):
     def has_permission(self, request, view):
         return bool(request.user and request.user.is_authenticated and request.user.is_active)
+
+
+class ProjectListView(APIView):
+    permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "head", "options"]
+
+    def get(self, request):
+        queryset = Project.objects.select_related("record").all()
+        visible_project_record_ids = records_user_can_view(
+            request.user,
+            Record.objects.filter(object_type_key="project"),
+        ).values_list("pk", flat=True)
+        queryset = queryset.filter(record_id__in=visible_project_record_ids)
+
+        query = (request.query_params.get("q") or "").strip()
+        status_filter = (request.query_params.get("status") or "").strip()
+        record_filter = (request.query_params.get("record") or "").strip()
+        if query:
+            queryset = queryset.filter(
+                models_filter_query(query),
+            )
+        if status_filter:
+            queryset = queryset.filter(status__in=_split_csv(status_filter))
+        if record_filter:
+            queryset = queryset.filter(record_id__iexact=record_filter)
+
+        return Response(ProjectListSerializer(queryset, many=True).data, status=status.HTTP_200_OK)
 
 
 class ProjectBoardView(APIView):
@@ -85,41 +136,6 @@ class ProjectTaskMoveView(APIView):
             request=request,
         )
         return Response(ProjectTaskSerializer(moved).data, status=status.HTTP_200_OK)
-
-
-class ProjectTaskDetailView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def patch(self, request, pk):
-        task = get_object_or_404(ProjectTask.objects.select_related("project__record"), pk=pk)
-        if not user_can(request.user, "edit", "project", record_id=str(task.project.record_id)):
-            raise PermissionDenied("You do not have permission to edit this project task.")
-        serializer = ProjectTaskUpdateSerializer(data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        before = _project_task_audit_snapshot(task)
-        update_fields = []
-        for field, value in serializer.validated_data.items():
-            setattr(task, field, value)
-            update_fields.append(field)
-        task.updated_by = request.user
-        update_fields.extend(["updated_by", "updated_at"])
-        task.save(update_fields=update_fields)
-        ProjectEvent.objects.create(
-            project=task.project,
-            task=task,
-            action="task_updated",
-            actor=request.user,
-            data={"fields": list(serializer.validated_data.keys())},
-        )
-        record_audit_event(
-            request.user,
-            "project.task_updated",
-            task,
-            before=before,
-            after=_project_task_audit_snapshot(task),
-            request=request,
-        )
-        return Response(ProjectTaskSerializer(task).data, status=status.HTTP_200_OK)
 
 
 class ProjectTimelineView(APIView):
@@ -227,90 +243,6 @@ class ProjectWorkloadView(APIView):
         )
 
 
-class ProjectListView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        if not user_has_view_scope(request.user, "project"):
-            raise PermissionDenied("You do not have permission to view projects.")
-        visible_project_record_ids = records_user_can_view(
-            request.user,
-            Record.objects.filter(object_type_key="project"),
-        ).values_list("pk", flat=True)
-        projects = (
-            Project.objects.select_related("record", "owner")
-            .filter(record_id__in=visible_project_record_ids)
-            .annotate(
-                task_count=Count("tasks", distinct=True),
-                open_tasks=Count(
-                    "tasks",
-                    filter=~Q(tasks__state=ProjectTask.State.DONE),
-                    distinct=True,
-                ),
-            )
-            .order_by("-updated_at", "name")
-        )
-        return Response(
-            [
-                {
-                    **_serialize_project(project),
-                    "description": project.description,
-                    "owner": project.owner.username if project.owner else None,
-                    "start_date": project.start_date.isoformat() if project.start_date else None,
-                    "target_date": project.target_date.isoformat() if project.target_date else None,
-                    "task_count": project.task_count,
-                    "open_tasks": project.open_tasks,
-                    "updated_at": project.updated_at.isoformat(),
-                }
-                for project in projects
-            ],
-            status=status.HTTP_200_OK,
-        )
-
-    def post(self, request):
-        serializer = ProjectCreateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        project = create_project(
-            name=serializer.validated_data["name"],
-            actor=request.user,
-            description=serializer.validated_data.get("description", ""),
-            start_date=serializer.validated_data.get("start_date"),
-            target_date=serializer.validated_data.get("target_date"),
-            owner=serializer.validated_data.get("owner"),
-            data=serializer.validated_data.get("data"),
-        )
-        return Response(ProjectSerializer(project).data, status=status.HTTP_201_CREATED)
-
-
-class ProjectDetailView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, project_id):
-        project = _get_project(request.user, project_id, "view")
-        return Response(ProjectSerializer(project).data, status=status.HTTP_200_OK)
-
-    def patch(self, request, project_id):
-        project = _get_project(request.user, project_id, "edit")
-        serializer = ProjectUpdateSerializer(data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        updated_project = update_project(
-            project=project,
-            actor=request.user,
-            request=request,
-            **serializer.validated_data,
-        )
-        return Response(ProjectSerializer(updated_project).data, status=status.HTTP_200_OK)
-
-
-class ProjectEventsView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, project_id):
-        project = _get_project(request.user, project_id, "view")
-        events = project.events.select_related("actor", "task").order_by("-created_at", "-id")[:100]
-        return Response(ProjectEventSerializer(events, many=True).data, status=status.HTTP_200_OK)
-
-
 def _get_project(user, project_id, action):
     project = get_object_or_404(Project.objects.select_related("record"), pk=project_id)
     if not user_can(user, action, "project", record_id=str(project.record_id)):
@@ -322,6 +254,7 @@ def _serialize_project(project):
     return {
         "id": str(project.pk),
         "record": str(project.record_id),
+        "record_code": project.record.code,
         "name": project.name,
         "status": project.status,
     }
@@ -340,40 +273,6 @@ def _serialize_board_task(task):
     }
 
 
-def _project_audit_snapshot(project):
-    return snapshot_model(
-        project,
-        [
-            "id",
-            "record_id",
-            "name",
-            "description",
-            "status",
-            "start_date",
-            "target_date",
-            "owner_id",
-            "updated_by_id",
-        ],
-    )
-
-
-def _project_task_audit_snapshot(task):
-    return snapshot_model(
-        task,
-        [
-            "id",
-            "project_id",
-            "column_id",
-            "title",
-            "state",
-            "assignee_user_id",
-            "due_date",
-            "estimated_hours",
-            "updated_by_id",
-        ],
-    )
-
-
 def _optional_int(value, field_name):
     if value is None or value == "":
         return None
@@ -385,3 +284,8 @@ def _required_int(value, field_name):
         return int(value)
     except (TypeError, ValueError) as error:
         raise ValidationError({field_name: ["Expected an integer."]}) from error
+
+
+def _split_csv(raw):
+    return [value.strip().lower() for value in raw.split(",") if value.strip()]
+

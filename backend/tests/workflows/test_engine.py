@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\tests\workflows\test_engine.py
+# Type: python
+# Purpose: Backend test suite validating domain invariants and API behavior.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: user_factory, create_user, release_workflow, test_product_release_requires_fields_and_completed_approval_task, test_workflow_routes_create_complete_and_release_approval_task
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
@@ -461,3 +480,4 @@ def test_record_workflow_returns_existing_inactive_definition_instance_before_cr
     assert response.json()["id"] == str(old_instance.pk)
     assert response.json()["definition"] == old_definition.key
     assert WorkflowInstance.objects.filter(record=record).count() == 1
+

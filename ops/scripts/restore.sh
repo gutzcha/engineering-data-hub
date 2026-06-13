@@ -1,4 +1,23 @@
 #!/bin/sh
+
+# ===
+# File Summary
+# Path: ops\scripts\restore.sh
+# Type: shell
+# Purpose: Operational automation scripts and deployment helpers.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: file-level implementation
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
 set -eu
 
 COMPOSE_FILE_ARGS=${COMPOSE_FILE_ARGS:-"-f compose.yaml"}
@@ -55,3 +74,4 @@ tar -xzf "$backup_dir/media-files.tar.gz" -C "$media_root"
 echo "Starting application services after restore..."
 docker compose $COMPOSE_FILE_ARGS up -d backend worker beat frontend proxy
 echo "Restore completed for $BACKUP_ID."
+

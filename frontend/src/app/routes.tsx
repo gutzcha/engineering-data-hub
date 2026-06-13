@@ -1,7 +1,29 @@
+/*
+ * ===
+ * File Summary
+ * Path: frontend\src\app\routes.tsx
+ * Type: typescript
+ * Purpose: Frontend application shell and route composition for authenticated screens.
+ * Primary responsibilities:
+ * - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+ * - Core symbols: NavigationItem, navigationItems, AppRoutes
+ * Inputs:
+ * - Downstream and upstream interactions in the same domain.
+ * Outputs:
+ * - API payloads, records, side effects, or UI views depending on file role.
+ * Dependencies:
+ * - Shared runtime services and adjacent domain modules.
+ * Known risks:
+ * - Validate behavior after migrations, dependency upgrades, or contract changes.
+ * ===
+ * 
+ */
+
 import {
   BarChart3,
   ClipboardCheck,
   Database,
+  Download,
   FileText,
   FolderKanban,
   History,
@@ -9,16 +31,14 @@ import {
   Plus,
   Search,
   Settings,
+  SlidersHorizontal,
   UploadCloud
 } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
-import { useMemo } from "react";
-import { Link, Navigate, Route, Routes, useParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { Link, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
 
-import { DataTable } from "../components/DataTable";
 import { StatusBadge } from "../components/StatusBadge";
-import type { StatusTone } from "../components/StatusBadge";
 import { ConfigWorkspace } from "../features/admin-config/ConfigWorkspace";
 import { LoginPage } from "../features/auth/LoginPage";
 import { AuditTimeline } from "../features/audit/AuditTimeline";
@@ -35,6 +55,7 @@ import { RecordCreate } from "../features/records/RecordCreate";
 import { RecordDetail } from "../features/records/RecordDetail";
 import { RecordList } from "../features/records/RecordList";
 import { SearchPage } from "../features/search/SearchPage";
+import { buildSearchPageUrl } from "../features/search/searchUrl";
 import { TaskInbox } from "../features/workflows/TaskInbox";
 import { apiGet } from "../lib/api";
 
@@ -108,61 +129,92 @@ export const navigationItems: NavigationItem[] = [
   }
 ];
 
-type ApiListResponse<T> = T[] | { results?: T[] };
+type HomeMetricCard = {
+  key: string;
+  label: string;
+  value: number;
+  filter: {
+    status: string;
+  };
+};
 
 type HomeRecord = {
-  id: string | number;
+  id: string;
   code?: string;
   title?: string;
-  name?: string;
+  status?: string;
   object_type_key?: string;
-  object_type_label?: string;
-  owner?: string;
-  status?: string;
-  updated_at?: string;
-  created_at?: string;
+  project_id?: string;
 };
 
-type HomeTask = {
-  id: string | number;
-  title?: string;
-  state?: string;
-  status?: string;
-  due_at?: string;
-  due_date?: string;
+type HomeOverviewPayload = {
+  cards: HomeMetricCard[];
+  recent_records: HomeRecord[];
 };
 
-type HomeDocument = {
-  id: string | number;
-  title?: string;
-  state?: string;
-  status?: string;
+const statusLabel: Record<string, string> = {
+  active: "Active",
+  ready: "Ready",
+  review: "Review",
+  blocked: "Blocked",
+  released: "Ready",
+  draft: "Ready",
+  completed: "Ready",
+  complete: "Ready",
+  neutral: "Ready",
+  default: "Ready"
+};
+
+const statusTone: Record<string, "active" | "review" | "blocked" | "ready" | "neutral"> = {
+  active: "active" as const,
+  review: "review" as const,
+  blocked: "blocked" as const,
+  ready: "ready" as const,
+  released: "ready" as const,
+  draft: "ready" as const,
+  completed: "ready" as const,
+  complete: "ready" as const,
+  neutral: "neutral" as const,
+  default: "neutral" as const
 };
 
 function HomePage() {
-  const recordsQuery = useQuery({
-    queryKey: ["home", "records"],
-    queryFn: () => apiGet<ApiListResponse<HomeRecord>>("/records/")
-  });
-  const tasksQuery = useQuery({
-    queryKey: ["home", "workflow-tasks", "open"],
-    queryFn: () => apiGet<ApiListResponse<HomeTask>>("/workflow-tasks/?state=open")
-  });
-  const documentsQuery = useQuery({
-    queryKey: ["home", "documents"],
-    queryFn: () => apiGet<ApiListResponse<HomeDocument>>("/documents/")
+  const navigate = useNavigate();
+  const homeQuery = useQuery({
+    queryKey: ["reports", "home-overview"],
+    queryFn: () => apiGet<HomeOverviewPayload>("/dashboards/home-overview/?limit=10")
   });
 
-  const records = itemsFromResponse(recordsQuery.data);
-  const tasks = itemsFromResponse(tasksQuery.data);
-  const documents = itemsFromResponse(documentsQuery.data);
-  const openRecords = records.filter((record) => record.status !== "archived");
-  const overdueTasks = tasks.filter(isOpenTaskOverdue);
-  const recentRecords = useMemo(
-    () => [...records].sort(compareRecordUpdatedAt).slice(0, 5),
-    [records]
-  );
-  const hasError = recordsQuery.isError || tasksQuery.isError || documentsQuery.isError;
+  const cards = homeQuery.data?.cards ?? [];
+  const recentRecords = homeQuery.data?.recent_records ?? [];
+
+  function navigateToSearch(card: HomeMetricCard) {
+    navigate(buildSearchPageUrl({ type: "records", status: card.filter?.status }));
+  }
+
+  function exportRecentRecords() {
+    if (homeQuery.isLoading || homeQuery.isError || recentRecords.length === 0) {
+      return;
+    }
+
+    const rows = [
+      ["Code", "Title", "Status", "Type"],
+      ...recentRecords.map((record) => [
+        record.code ?? record.id,
+        record.title ?? "",
+        record.status ?? "",
+        record.object_type_key ?? ""
+      ])
+    ];
+    const csv = rows.map((row) => row.map(csvCell).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "operational-overview-records.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <div className="page-stack">
@@ -172,6 +224,15 @@ function HomePage() {
           <h1 id="overview-title">Operational Overview</h1>
         </div>
         <div className="header-actions">
+          <button
+            className="button button-secondary"
+            type="button"
+            onClick={exportRecentRecords}
+            disabled={homeQuery.isLoading || homeQuery.isError || recentRecords.length === 0}
+          >
+            <Download aria-hidden="true" size={16} />
+            Export recent records
+          </button>
           <Link className="button button-primary" to="/records/new">
             <Plus aria-hidden="true" size={16} />
             New Record
@@ -180,38 +241,59 @@ function HomePage() {
       </section>
 
       <section className="metrics-grid" aria-label="Workspace metrics">
-        <Metric
-          label="Open records"
-          value={recordsQuery.isLoading ? "Loading" : openRecords.length}
-          status="active"
-          to="/records"
-        />
-        <Metric
-          label="Pending review"
-          value={tasksQuery.isLoading ? "Loading" : tasks.length}
-          status="review"
-          to="/tasks"
-        />
-        <Metric
-          label="Overdue work"
-          value={tasksQuery.isLoading ? "Loading" : overdueTasks.length}
-          status="blocked"
-          to="/tasks?due=overdue"
-        />
-        <Metric
-          label="Controlled documents"
-          value={documentsQuery.isLoading ? "Loading" : documents.length}
-          status="ready"
-          to="/documents"
-        />
-      </section>
+        {homeQuery.isLoading && (
+          <>
+            <article className="metric">
+              <Metric label="Loading" value="..." status="neutral" />
+            </article>
+            <article className="metric">
+              <Metric label="Loading" value="..." status="neutral" />
+            </article>
+            <article className="metric">
+              <Metric label="Loading" value="..." status="neutral" />
+            </article>
+            <article className="metric">
+              <Metric label="Loading" value="..." status="neutral" />
+            </article>
+          </>
+        )}
 
-      {hasError && (
-        <div className="admin-alert" role="alert">
-          <strong>Operational overview failed</strong>
-          <span>{homeErrorMessage(recordsQuery.error ?? tasksQuery.error ?? documentsQuery.error)}</span>
-        </div>
-      )}
+        {homeQuery.isError && (
+          <article className="metric">
+            <span>Failed to load overview</span>
+            <strong>—</strong>
+            <StatusBadge tone="neutral">Unavailable</StatusBadge>
+          </article>
+        )}
+
+        {!homeQuery.isLoading &&
+          !homeQuery.isError &&
+          cards.map((card) => (
+            <button
+              className="metric"
+              key={card.key}
+              type="button"
+              aria-label={`Open search filtered by ${card.label}`}
+              onClick={() => navigateToSearch(card)}
+            >
+              <Metric
+                label={card.label}
+                value={String(card.value)}
+                status={statusTone[card.filter?.status] ?? statusTone.default}
+              />
+            </button>
+          ))}
+
+        {!homeQuery.isLoading &&
+          !homeQuery.isError &&
+          cards.length === 0 && (
+            <article className="metric">
+              <span>No metrics</span>
+              <strong>0</strong>
+              <StatusBadge tone="neutral">No data</StatusBadge>
+            </article>
+          )}
+      </section>
 
       <section className="table-panel" aria-labelledby="queue-title">
         <div className="panel-heading">
@@ -219,51 +301,37 @@ function HomePage() {
             <p className="section-kicker">Queue</p>
             <h2 id="queue-title">Recent Record Activity</h2>
           </div>
-          <StatusBadge tone={recordsQuery.isLoading ? "neutral" : recentRecords.length ? "active" : "ready"}>
-            {recordsQuery.isLoading ? "Loading" : `${recentRecords.length} Recent`}
+          <StatusBadge tone="review">
+            {homeQuery.isLoading ? "Loading" : `${recentRecords.length} items`}
           </StatusBadge>
         </div>
-        <DataTable
-          data={recentRecords}
-          emptyMessage={
-            recordsQuery.isLoading ? "Loading recent records." : "No record activity is available yet."
-          }
-          columns={[
-            {
-              accessorKey: "id",
-              header: "Record",
-              cell: ({ row }) => (
-                <Link className="text-link" to={`/records/${row.original.id}`}>
-                  {recordCode(row.original)}
-                </Link>
-              )
-            },
-            {
-              id: "title",
-              header: "Title",
-              cell: ({ row }) => recordTitle(row.original)
-            },
-            {
-              accessorKey: "owner",
-              header: "Owner",
-              cell: ({ row }) => row.original.owner || "Unassigned"
-            },
-            {
-              accessorKey: "status",
-              header: "Status",
-              cell: ({ getValue }) => (
-                <StatusBadge tone={recordStatusTone(getValue<string>())}>
-                  {humanizeStatus(getValue<string>() ?? "draft")}
+        {homeQuery.isLoading ? (
+          <p className="admin-muted">Loading recent records...</p>
+        ) : recentRecords.length === 0 ? (
+          <p className="admin-muted">No recent records match your current visibility filters.</p>
+        ) : (
+          <div className="search-result-list" role="list" aria-label="Recent records">
+            {recentRecords.map((record) => (
+              <Link
+                className="search-result"
+                to={homeRecordUrl(record)}
+                key={record.id}
+                aria-label={`Open ${record.code ?? record.id} ${record.title ?? ""}`}
+              >
+                <div>
+                  <strong>{record.code || record.id}</strong>
+                  <small>
+                    {record.title ?? "Untitled"}
+                    {record.object_type_key ? ` · ${record.object_type_key}` : ""}
+                  </small>
+                </div>
+                <StatusBadge tone={statusTone[record.status ?? ""] ?? "neutral"}>
+                  {statusLabel[record.status ?? ""] ?? statusLabel.default}
                 </StatusBadge>
-              )
-            },
-            {
-              accessorKey: "updated",
-              header: "Updated",
-              cell: ({ row }) => formatDate(row.original.updated_at ?? row.original.created_at)
-            }
-          ]}
-        />
+              </Link>
+            ))}
+          </div>
+        )}
       </section>
     </div>
   );
@@ -271,97 +339,45 @@ function HomePage() {
 
 function Metric({
   label,
-  to,
   value,
   status
 }: {
   label: string;
-  to: string;
-  value: number | string;
-  status: "active" | "ready" | "review" | "blocked";
+  value: string;
+  status: "active" | "ready" | "review" | "blocked" | "neutral";
 }) {
   return (
-    <Link className="metric metric-link" to={to}>
+    <>
       <span>{label}</span>
       <strong>{value}</strong>
       <StatusBadge tone={status}>{statusLabelForMetric(status)}</StatusBadge>
-    </Link>
+    </>
   );
 }
 
-function statusLabelForMetric(status: "active" | "ready" | "review" | "blocked") {
+function csvCell(value: string) {
+  const escaped = value.replace(/"/g, '""');
+  return `"${escaped}"`;
+}
+
+function statusLabelForMetric(status: "active" | "ready" | "review" | "blocked" | "neutral") {
   const labels = {
     active: "Active",
     ready: "Ready",
     review: "Review",
-    blocked: "Blocked"
+    blocked: "Blocked",
+    neutral: "Ready"
   };
 
   return labels[status];
 }
 
-function itemsFromResponse<T>(response?: ApiListResponse<T>) {
-  if (Array.isArray(response)) {
-    return response;
+function homeRecordUrl(record: HomeRecord) {
+  if (record.object_type_key === "project" && record.project_id) {
+    return `/projects/${record.project_id}`;
   }
 
-  return response?.results ?? [];
-}
-
-function compareRecordUpdatedAt(left: HomeRecord, right: HomeRecord) {
-  return recordTimestamp(right) - recordTimestamp(left);
-}
-
-function recordTimestamp(record: HomeRecord) {
-  const value = record.updated_at ?? record.created_at ?? "";
-  const timestamp = Date.parse(value);
-  return Number.isNaN(timestamp) ? 0 : timestamp;
-}
-
-function recordCode(record: HomeRecord) {
-  return record.code ?? String(record.id);
-}
-
-function recordTitle(record: HomeRecord) {
-  return record.title ?? record.name ?? record.object_type_label ?? record.object_type_key ?? "Untitled record";
-}
-
-function recordStatusTone(status?: string): StatusTone {
-  if (status === "released") {
-    return "ready";
-  }
-
-  if (status === "archived") {
-    return "neutral";
-  }
-
-  return "review";
-}
-
-function humanizeStatus(value: string) {
-  return value.replace(/[_-]+/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
-}
-
-function formatDate(value?: string) {
-  if (!value) {
-    return "Not recorded";
-  }
-
-  return new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(value));
-}
-
-function isOpenTaskOverdue(task: HomeTask) {
-  const dueDate = task.due_at ?? task.due_date;
-  if (!dueDate) {
-    return false;
-  }
-
-  const timestamp = Date.parse(dueDate);
-  return !Number.isNaN(timestamp) && timestamp < Date.now();
-}
-
-function homeErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "Live operational data could not be loaded.";
+  return `/records/${record.id}`;
 }
 
 function PlaceholderPage({ item }: { item: NavigationItem }) {
@@ -374,6 +390,10 @@ function PlaceholderPage({ item }: { item: NavigationItem }) {
           <p className="section-kicker">{item.description}</p>
           <h1 id={`${item.label}-title`}>{item.label}</h1>
         </div>
+        <Link className="button button-secondary" to={buildSearchPageUrl({ q: item.label })}>
+          <SlidersHorizontal aria-hidden="true" size={16} />
+          Open Search Hub
+        </Link>
       </section>
       <section className="empty-state">
         <Icon aria-hidden="true" size={28} />
@@ -479,14 +499,14 @@ export function AppRoutes() {
             ].includes(item.path)
         )
         .map((item) => (
-        <Route
-          key={item.path}
-          path={item.path}
-          element={
-            item.path === "/admin" ? <ConfigWorkspace /> : <PlaceholderPage item={item} />
-          }
-        />
-      ))}
+          <Route
+            key={item.path}
+            path={item.path}
+            element={
+              item.path === "/admin" ? <ConfigWorkspace /> : <PlaceholderPage item={item} />
+            }
+          />
+        ))}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

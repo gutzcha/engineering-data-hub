@@ -1,11 +1,32 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, History, Link2, Loader2, PanelsTopLeft, Save } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+/*
+ * ===
+ * File Summary
+ * Path: frontend\src\features\projects\ProjectDetail.tsx
+ * Type: typescript
+ * Purpose: Frontend feature module implementing business flows and UI surfaces.
+ * Primary responsibilities:
+ * - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+ * - Core symbols: ProjectDetail
+ * Inputs:
+ * - Downstream and upstream interactions in the same domain.
+ * Outputs:
+ * - API payloads, records, side effects, or UI views depending on file role.
+ * Dependencies:
+ * - Shared runtime services and adjacent domain modules.
+ * Known risks:
+ * - Validate behavior after migrations, dependency upgrades, or contract changes.
+ * ===
+ * 
+ */
+
+import { useQuery } from "@tanstack/react-query";
+import { ClipboardList, FileText, History, Link2, Loader2, PanelsTopLeft } from "lucide-react";
+import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { StatusBadge } from "../../components/StatusBadge";
-import { apiGet, apiPatch } from "../../lib/api";
-import type { DocumentItem } from "../documents/DocumentPanel";
+import { apiGet } from "../../lib/api";
+import { DocumentPanel, type DocumentItem } from "../documents/DocumentPanel";
 import { ProjectBoard } from "./ProjectBoard";
 import type { ProjectBoardPayload, ProjectSummary } from "./ProjectBoard";
 import { ProjectTimeline } from "./ProjectTimeline";
@@ -18,31 +39,11 @@ type TimelinePayload = {
   dependencies?: unknown[];
 };
 
-type ProjectDetailSummary = ProjectSummary & {
-  description?: string;
-  owner?: string | number | null;
-  owner_username?: string | null;
-  record?: string | number;
-  start_date?: string | null;
-  target_date?: string | null;
-};
+type ProjectDetailSummary = ProjectSummary & { record?: string | number };
 
-type ProjectDraft = {
-  description: string;
-  owner: string;
-  status: string;
-  target_date: string;
-};
+type ProjectDocumentListResponse = DocumentItem[] | { results?: DocumentItem[] };
 
 type ProjectTab = "overview" | "board" | "timeline" | "dependencies" | "linked" | "documents" | "audit";
-
-type ProjectEvent = {
-  id: string | number;
-  action: string;
-  actor_username?: string | null;
-  task_title?: string | null;
-  created_at?: string;
-};
 
 const tabs: Array<{ key: ProjectTab; label: string }> = [
   { key: "overview", label: "Overview" },
@@ -56,21 +57,7 @@ const tabs: Array<{ key: ProjectTab; label: string }> = [
 
 export function ProjectDetail() {
   const { projectId = "" } = useParams();
-  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<ProjectTab>("overview");
-  const [projectDraft, setProjectDraft] = useState<ProjectDraft>({
-    description: "",
-    owner: "",
-    status: "planning",
-    target_date: ""
-  });
-  const [projectDraftDirty, setProjectDraftDirty] = useState(false);
-
-  const projectQuery = useQuery({
-    queryKey: ["projects", projectId],
-    queryFn: () => apiGet<ProjectDetailSummary>(`/projects/${projectId}/`),
-    enabled: Boolean(projectId)
-  });
 
   const boardQuery = useQuery({
     queryKey: ["projects", projectId, "board"],
@@ -84,46 +71,18 @@ export function ProjectDetail() {
     enabled: Boolean(projectId)
   });
 
-  const project = useMemo<ProjectDetailSummary>(
-    () => projectQuery.data ?? timelineQuery.data?.project ?? boardQuery.data?.project ?? { id: projectId },
-    [boardQuery.data?.project, projectId, projectQuery.data, timelineQuery.data?.project]
-  );
-  const updateProject = useMutation({
-    mutationFn: (draft: ProjectDraft) =>
-      apiPatch<ProjectDetailSummary>(`/projects/${projectId}/`, {
-        description: draft.description,
-        owner: draft.owner ? Number(draft.owner) : null,
-        status: draft.status,
-        target_date: draft.target_date || null
-    }),
-    onSuccess: (updatedProject) => {
-      setProjectDraft(projectDraftFromProject(updatedProject));
-      setProjectDraftDirty(false);
-      queryClient.setQueryData(["projects", projectId], updatedProject);
-      void queryClient.invalidateQueries({ queryKey: ["projects"] });
-      void queryClient.invalidateQueries({ queryKey: ["projects", "workload"] });
-    }
-  });
+  const project = useMemo<ProjectDetailSummary>(() => {
+    const boardProject = boardQuery.data?.project as ProjectDetailSummary | undefined;
+    const timelineProject = timelineQuery.data?.project as ProjectDetailSummary | undefined;
 
-  useEffect(() => {
-    setProjectDraftDirty(false);
-  }, [projectId]);
-
-  useEffect(() => {
-    if (!projectDraftDirty) {
-      setProjectDraft(projectDraftFromProject(project));
-    }
-  }, [project.description, project.owner, project.status, project.target_date, projectDraftDirty]);
-
-  function updateProjectDraft(nextDraft: ProjectDraft) {
-    setProjectDraftDirty(true);
-    setProjectDraft(nextDraft);
-  }
-
-  function submitProject(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    updateProject.mutate(projectDraft);
-  }
+    return {
+      id: projectId,
+      ...boardProject,
+      ...timelineProject,
+      record: timelineProject?.record ?? boardProject?.record,
+      record_code: timelineProject?.record_code ?? boardProject?.record_code
+    };
+  }, [boardQuery.data?.project, projectId, timelineQuery.data?.project]);
 
   const title = project.title ?? project.name ?? project.code ?? `Project ${project.id ?? projectId}`;
   const boardTaskCount =
@@ -139,10 +98,10 @@ export function ProjectDetail() {
         <StatusBadge tone={statusTone(project.status)}>{project.status ?? "Active"}</StatusBadge>
       </section>
 
-      {(projectQuery.error || boardQuery.error || timelineQuery.error) && (
+      {(boardQuery.error || timelineQuery.error) && (
         <div className="admin-alert" role="alert">
           <strong>Project data partially unavailable</strong>
-          <span>{errorMessage(projectQuery.error ?? boardQuery.error ?? timelineQuery.error)}</span>
+          <span>{errorMessage(boardQuery.error ?? timelineQuery.error)}</span>
         </div>
       )}
 
@@ -171,12 +130,7 @@ export function ProjectDetail() {
           <OverviewPanel
             boardTaskCount={boardTaskCount}
             isLoading={boardQuery.isLoading || timelineQuery.isLoading}
-            draft={projectDraft}
-            isSaving={updateProject.isPending}
-            onChange={updateProjectDraft}
-            onSubmit={submitProject}
             project={project}
-            saveError={updateProject.error}
             timelineTaskCount={timelineQuery.data?.tasks?.length ?? 0}
           />
           <WorkloadView compact />
@@ -186,32 +140,22 @@ export function ProjectDetail() {
       {activeTab === "board" && <ProjectBoard projectId={projectId} />}
       {activeTab === "timeline" && <ProjectTimeline projectId={projectId} />}
       {activeTab === "dependencies" && <ProjectTimeline projectId={projectId} mode="dependencies" />}
-      {activeTab === "linked" && <LinkedRecordsPanel recordId={timelineQuery.data?.project?.record} />}
-      {activeTab === "documents" && <DocumentsPanel recordId={project.record ?? timelineQuery.data?.project?.record} />}
-      {activeTab === "audit" && <AuditPanel projectId={projectId} />}
+      {activeTab === "linked" && <LinkedRecordsPanel recordId={project?.record} />}
+      {activeTab === "documents" && <DocumentsPanel recordId={project?.record} />}
+      {activeTab === "audit" && <AuditPanel recordId={project?.record} />}
     </div>
   );
 }
 
 function OverviewPanel({
   boardTaskCount,
-  draft,
   isLoading,
-  isSaving,
-  onChange,
-  onSubmit,
   project,
-  saveError,
   timelineTaskCount
 }: {
   boardTaskCount: number;
-  draft: ProjectDraft;
   isLoading: boolean;
-  isSaving: boolean;
-  onChange: (draft: ProjectDraft) => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   project: ProjectDetailSummary;
-  saveError: unknown;
   timelineTaskCount: number;
 }) {
   return (
@@ -223,105 +167,32 @@ function OverviewPanel({
         </div>
         {isLoading ? <Loader2 aria-hidden="true" size={18} /> : <PanelsTopLeft aria-hidden="true" size={18} />}
       </div>
-      <div className="record-panel-body project-overview-body">
-        <div className="project-overview-summary">
-          <dl className="definition-list">
-            <div>
-              <dt>Code</dt>
-              <dd>{project.code ?? project.id ?? "Not recorded"}</dd>
-            </div>
-            <div>
-              <dt>Status</dt>
-              <dd>{project.status ?? "Active"}</dd>
-            </div>
-            <div>
-              <dt>Owner</dt>
-              <dd>{project.owner_username ?? project.owner ?? "Unassigned"}</dd>
-            </div>
-            <div>
-              <dt>Target</dt>
-              <dd>{formatDate(project.target_date)}</dd>
-            </div>
-            <div>
-              <dt>Source record</dt>
-              <dd>{project.record ?? "Not linked"}</dd>
-            </div>
-            <div>
-              <dt>Board tasks</dt>
-              <dd>{boardTaskCount}</dd>
-            </div>
-            <div>
-              <dt>Timeline tasks</dt>
-              <dd>{timelineTaskCount}</dd>
-            </div>
-          </dl>
-        </div>
-        <form className="admin-form-grid project-overview-form" onSubmit={onSubmit}>
-          <label className="field-control">
-            <span>Project Status</span>
-            <select
-              aria-label="Project Status"
-              value={draft.status}
-              onChange={(event) => onChange({ ...draft, status: event.target.value })}
-            >
-              <option value="planning">Planning</option>
-              <option value="active">Active</option>
-              <option value="complete">Complete</option>
-              <option value="archived">Archived</option>
-            </select>
-          </label>
-          <label className="field-control">
-            <span>Owner User ID</span>
-            <input
-              aria-label="Owner User ID"
-              inputMode="numeric"
-              min="1"
-              type="number"
-              value={draft.owner}
-              onChange={(event) => onChange({ ...draft, owner: event.target.value })}
-            />
-          </label>
-          <label className="field-control">
-            <span>Target Date</span>
-            <input
-              aria-label="Target Date"
-              type="date"
-              value={draft.target_date}
-              onChange={(event) => onChange({ ...draft, target_date: event.target.value })}
-            />
-          </label>
-          <label className="field-control field-control-wide">
-            <span>Description</span>
-            <textarea
-              aria-label="Description"
-              rows={3}
-              value={draft.description}
-              onChange={(event) => onChange({ ...draft, description: event.target.value })}
-            />
-          </label>
-          <button className="button button-primary" type="submit" disabled={isSaving}>
-            <Save aria-hidden="true" size={16} />
-            {isSaving ? "Saving" : "Save Project"}
-          </button>
-        </form>
-        {saveError ? (
-          <div className="admin-alert" role="alert">
-            <strong>Project was not saved</strong>
-            <span>{errorMessage(saveError)}</span>
+      <div className="record-panel-body">
+        <dl className="definition-list">
+          <div>
+            <dt>Code</dt>
+            <dd>{project.code ?? project.id ?? "Not recorded"}</dd>
           </div>
-        ) : null}
+          <div>
+            <dt>Status</dt>
+            <dd>{project.status ?? "Active"}</dd>
+          </div>
+          <div>
+            <dt>Source record</dt>
+            <dd>{project.record ?? "Not linked"}</dd>
+          </div>
+          <div>
+            <dt>Board tasks</dt>
+            <dd>{boardTaskCount}</dd>
+          </div>
+          <div>
+            <dt>Timeline tasks</dt>
+            <dd>{timelineTaskCount}</dd>
+          </div>
+        </dl>
       </div>
     </section>
   );
-}
-
-function projectDraftFromProject(project: ProjectDetailSummary): ProjectDraft {
-  return {
-    description: project.description ?? "",
-    owner: project.owner === undefined || project.owner === null ? "" : String(project.owner),
-    status: project.status ?? "planning",
-    target_date: project.target_date ?? ""
-  };
 }
 
 function LinkedRecordsPanel({ recordId }: { recordId?: string | number }) {
@@ -350,11 +221,25 @@ function LinkedRecordsPanel({ recordId }: { recordId?: string | number }) {
 
 function DocumentsPanel({ recordId }: { recordId?: string | number }) {
   const documentsQuery = useQuery({
-    queryKey: ["project-documents", recordId],
-    queryFn: () => apiGet<DocumentItem[]>(`/documents/?owner_record=${recordId}`),
-    enabled: recordId !== undefined && recordId !== null && String(recordId).length > 0
+    queryKey: ["documents", "project", recordId],
+    queryFn: () => apiGet<ProjectDocumentListResponse>(`/documents/?owner_record=${recordId}`),
+    enabled: Boolean(recordId)
   });
-  const documents = documentsQuery.data ?? [];
+  const documents = projectDocumentsFromResponse(documentsQuery.data);
+
+  if (recordId) {
+    return (
+      <>
+        {documentsQuery.error && (
+          <div className="admin-alert" role="alert">
+            <strong>Project documents unavailable</strong>
+            <span>{errorMessage(documentsQuery.error)}</span>
+          </div>
+        )}
+        <DocumentPanel documents={documents} ownerRecordId={recordId} />
+      </>
+    );
+  }
 
   return (
     <section className="table-panel detail-panel" aria-labelledby="project-documents-title">
@@ -365,44 +250,26 @@ function DocumentsPanel({ recordId }: { recordId?: string | number }) {
         </div>
         <FileText aria-hidden="true" size={18} />
       </div>
-      <div className="record-panel-body document-list" role="list" aria-label="Project documents">
-        {!recordId ? (
-          <p className="admin-muted">This project has no linked source record for document lookup.</p>
-        ) : documentsQuery.error ? (
-          <div className="admin-alert" role="alert">
-            <strong>Project documents failed</strong>
-            <span>{errorMessage(documentsQuery.error)}</span>
-          </div>
-        ) : documentsQuery.isLoading ? (
-          <p className="admin-muted">Loading project documents.</p>
-        ) : documents.length ? (
-          documents.map((document) => (
-            <Link className="document-item" role="listitem" to={`/documents/${document.id}`} key={document.id}>
-              <div className="document-main">
-                <strong>{document.title ?? document.name ?? document.filename ?? document.id}</strong>
-                <span>{document.document_type ?? "document"}</span>
-              </div>
-              <StatusBadge tone={document.state === "released" ? "ready" : "review"}>
-                {document.state ?? document.status ?? "draft"}
-              </StatusBadge>
-            </Link>
-          ))
-        ) : (
-          <p className="admin-muted">No controlled documents are linked to this project record.</p>
-        )}
+      <div className="record-panel-body document-list">
+        <p className="admin-muted">
+          This project is not linked to a source record yet. Link a project record to enable controlled document actions.
+        </p>
       </div>
     </section>
   );
 }
 
-function AuditPanel({ projectId }: { projectId: string }) {
-  const eventsQuery = useQuery({
-    queryKey: ["projects", projectId, "events"],
-    queryFn: () => apiGet<ProjectEvent[]>(`/projects/${projectId}/events/`),
-    enabled: Boolean(projectId)
-  });
-  const events = eventsQuery.data ?? [];
+function projectDocumentsFromResponse(response?: ProjectDocumentListResponse) {
+  if (!response) {
+    return [];
+  }
+  if (Array.isArray(response)) {
+    return response;
+  }
+  return response.results ?? [];
+}
 
+function AuditPanel({ recordId }: { recordId?: string | number }) {
   return (
     <section className="table-panel detail-panel" aria-labelledby="project-audit-title">
       <div className="panel-heading">
@@ -412,24 +279,20 @@ function AuditPanel({ projectId }: { projectId: string }) {
         </div>
         <History aria-hidden="true" size={18} />
       </div>
-      <div className="record-panel-body event-list" role="list" aria-label="Project audit events">
-        {eventsQuery.error ? (
-          <div className="admin-alert" role="alert">
-            <strong>Project audit failed</strong>
-            <span>{errorMessage(eventsQuery.error)}</span>
+      <div className="record-panel-body event-list" role="list">
+        {recordId ? (
+          <div className="record-action-row">
+            <Link className="button button-primary" to={`/records/${recordId}`}>
+              Open source record history
+            </Link>
+            <Link className="button button-secondary" to="/audit">
+              Open audit workspace
+            </Link>
           </div>
-        ) : eventsQuery.isLoading ? (
-          <p className="admin-muted">Loading project audit events.</p>
-        ) : events.length ? (
-          events.map((event) => (
-            <article className="event-item" role="listitem" key={event.id}>
-              <strong>{humanize(event.action)}</strong>
-              <span>{event.task_title ?? event.actor_username ?? "Project"}</span>
-              <span>{formatDate(event.created_at)}</span>
-            </article>
-          ))
         ) : (
-          <p className="admin-muted">No project audit events are recorded yet.</p>
+          <p className="admin-muted">
+            This project is not linked to a source record yet. Link a project record to review its audit history.
+          </p>
         )}
       </div>
     </section>
@@ -457,21 +320,7 @@ function statusTone(status?: string) {
   return "review";
 }
 
-function formatDate(value?: string | null) {
-  if (!value) {
-    return "Not set";
-  }
-
-  return new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(value));
-}
-
-function humanize(value?: string | null) {
-  if (!value) {
-    return "Not recorded";
-  }
-  return value.replace(/[_\.]+/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
-}
-
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Project request failed.";
 }
+

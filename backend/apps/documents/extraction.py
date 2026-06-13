@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\documents\extraction.py
+# Type: python
+# Purpose: Document domain service managing records, revisions, and extraction workflows.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: extract_text, _extract_pdf, _extract_docx, _extract_xlsx, _extract_image
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from pathlib import Path
 
 
@@ -118,3 +137,4 @@ def _sanitize_text(text: str) -> str:
 
 def _joined_length(parts) -> int:
     return sum(len(part) for part in parts) + max(len(parts) - 1, 0)
+

@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\tests\imports\test_folder_linking.py
+# Type: python
+# Purpose: Backend test suite validating domain invariants and API behavior.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: user_factory, create_user, folder_link_permissions, product_records, test_folder_scan_suggests_links_unmatched_folders_and_conflicts
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
@@ -216,3 +235,4 @@ def test_accept_folder_links_rejects_path_traversal(
             links=[{"record_id": str(first.pk), "relative_path": "../escape"}],
             actor=actor,
         )
+

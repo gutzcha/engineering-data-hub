@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\config_registry\models.py
+# Type: python
+# Purpose: Configuration registry service for dynamic schemas, publishing, and config governance.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: ConfigurationDraft, Status, Meta, __str__, ConfigurationVersion
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -214,3 +233,4 @@ class DashboardDefinition(PublishedDefinitionImmutableMixin, models.Model):
 
     def __str__(self):
         return f"{self.key} ({self.configuration_version})"
+

@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: compose.dev.yaml
+# Type: shell
+# Purpose: Compose environment definition for local and service-stack execution.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: file-level implementation
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 services:
   proxy:
     ports:
@@ -48,3 +67,4 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
+

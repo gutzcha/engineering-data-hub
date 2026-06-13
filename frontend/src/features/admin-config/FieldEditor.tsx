@@ -1,4 +1,23 @@
-import { Trash2 } from "lucide-react";
+/*
+ * ===
+ * File Summary
+ * Path: frontend\src\features\admin-config\FieldEditor.tsx
+ * Type: typescript
+ * Purpose: Frontend feature module implementing business flows and UI surfaces.
+ * Primary responsibilities:
+ * - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+ * - Core symbols: FieldEditor
+ * Inputs:
+ * - Downstream and upstream interactions in the same domain.
+ * Outputs:
+ * - API payloads, records, side effects, or UI views depending on file role.
+ * Dependencies:
+ * - Shared runtime services and adjacent domain modules.
+ * Known risks:
+ * - Validate behavior after migrations, dependency upgrades, or contract changes.
+ * ===
+ * 
+ */
 
 import type { FieldDefinition } from "./ConfigWorkspace";
 
@@ -6,7 +25,6 @@ type FieldEditorProps = {
   field: FieldDefinition;
   readOnly: boolean;
   onChange: (field: FieldDefinition) => void;
-  onRemove: () => void;
 };
 
 const fieldTypes = [
@@ -23,7 +41,7 @@ const fieldTypes = [
   "user_ref"
 ];
 
-export function FieldEditor({ field, readOnly, onChange, onRemove }: FieldEditorProps) {
+export function FieldEditor({ field, readOnly, onChange }: FieldEditorProps) {
   function updateField<Key extends keyof FieldDefinition>(
     key: Key,
     value: FieldDefinition[Key]
@@ -32,7 +50,7 @@ export function FieldEditor({ field, readOnly, onChange, onRemove }: FieldEditor
   }
 
   return (
-    <article className="field-editor" aria-label={`${field.label || field.key || "Unnamed"} field`}>
+    <article className="field-editor">
       <div className="field-editor-main">
         <label className="field-control">
           <span>Field key</span>
@@ -64,15 +82,6 @@ export function FieldEditor({ field, readOnly, onChange, onRemove }: FieldEditor
             ))}
           </select>
         </label>
-        <button
-          className="button button-secondary"
-          type="button"
-          onClick={onRemove}
-          disabled={readOnly}
-        >
-          <Trash2 aria-hidden="true" size={14} />
-          Remove Field
-        </button>
       </div>
 
       <div className="toggle-row" aria-label={`${field.label} field controls`}>
@@ -139,3 +148,4 @@ export function FieldEditor({ field, readOnly, onChange, onRemove }: FieldEditor
     </article>
   );
 }
+

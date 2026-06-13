@@ -1,3 +1,24 @@
+/*
+ * ===
+ * File Summary
+ * Path: frontend\src\features\records\RecordCreate.tsx
+ * Type: typescript
+ * Purpose: Frontend feature module implementing business flows and UI surfaces.
+ * Primary responsibilities:
+ * - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+ * - Core symbols: RecordCreate
+ * Inputs:
+ * - Downstream and upstream interactions in the same domain.
+ * Outputs:
+ * - API payloads, records, side effects, or UI views depending on file role.
+ * Dependencies:
+ * - Shared runtime services and adjacent domain modules.
+ * Known risks:
+ * - Validate behavior after migrations, dependency upgrades, or contract changes.
+ * ===
+ * 
+ */
+
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Loader2, Plus, Save } from "lucide-react";
 import type { FormEvent } from "react";
@@ -173,3 +194,4 @@ function labelForObjectType(objectType?: ObjectTypeDefinition) {
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Record creation request failed.";
 }
+

@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\tests\documents\test_extraction.py
+# Type: python
+# Purpose: Backend test suite validating domain invariants and API behavior.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: test_docx_extraction_reads_paragraphs_and_table_cells, test_docx_extraction_caps_extracted_text, test_xlsx_extraction_reads_visible_sheets_only, test_pdf_extraction_reads_text_layer, test_image_ocr_gracefully_handles_missing_tesseract
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 import pytest
 
 from apps.documents.extraction import MAX_EXTRACTED_TEXT_CHARS, _sanitize_text, extract_text
@@ -144,3 +163,4 @@ def test_unknown_file_types_are_unsupported(tmp_path, file_name, mime_type):
 
     assert text == ""
     assert status == "unsupported"
+

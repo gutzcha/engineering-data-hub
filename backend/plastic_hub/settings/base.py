@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\plastic_hub\settings\base.py
+# Type: python
+# Purpose: Django project runtime configuration, routing, and process bootstrap.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: env_bool, env_list, unique_list, database_from_url
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 import os
 from pathlib import Path
 from urllib.parse import parse_qsl, urlparse
@@ -138,11 +157,13 @@ REST_FRAMEWORK = {
     "DEFAULT_FILTER_BACKENDS": ["django_filters.rest_framework.DjangoFilterBackend"],
 }
 
-CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", "http://localhost:5173")
+CORS_ALLOWED_ORIGINS = env_list(
+    "CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
+)
 CORS_ALLOW_CREDENTIALS = True
 CSRF_TRUSTED_ORIGINS = env_list(
     "CSRF_TRUSTED_ORIGINS",
-    f"http://localhost:5173,http://{APP_HOST},https://{APP_HOST}",
+    f"http://localhost:5173,http://127.0.0.1:5173,http://{APP_HOST},https://{APP_HOST}",
 )
 
 MEILI_URL = os.environ.get("MEILI_URL", "")
@@ -168,3 +189,4 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(minute="*/15"),
     }
 }
+

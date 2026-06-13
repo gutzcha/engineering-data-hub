@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\search\indexers.py
+# Type: python
+# Purpose: Search domain for indexing payload generation and search query APIs.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: build_record_payload, build_document_revision_payload, build_folder_event_payload, _iter_json_values, _relationship_text
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from collections.abc import Iterable
 
 
@@ -40,12 +59,17 @@ def build_project_payload(project):
     record = project.record
     return {
         "id": str(project.pk),
-        "record_id": str(record.pk),
-        "object_type_key": record.object_type_key,
-        "code": record.code,
+        "project_id": str(project.pk),
+        "record_id": str(project.record_id),
+        "code": record.code if record else "",
         "title": project.name,
+        "name": project.name,
         "description": project.description,
         "status": project.status,
+        "object_type_key": "project",
+        "record_title": record.title if record else "",
+        "record_status": record.status if record else "",
+        "data_text": " ".join(_iter_json_values(record.data)) if record else "",
         "updated_at": project.updated_at.isoformat(),
     }
 
@@ -105,4 +129,5 @@ def _relationship_parts(relationship_type_key, related_record):
         related_record.title,
         related_record.object_type_key,
     ]
+
 

@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\tests\audit\test_audit_log.py
+# Type: python
+# Purpose: Backend test suite validating domain invariants and API behavior.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: user_factory, create_user, active_config, permissions, post_json
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from io import BytesIO
 
 import pytest
@@ -571,3 +590,4 @@ def test_folder_link_accept_audit_records_request_metadata(
     assert event.request_id == "folder-link-request-1"
     assert event.user_agent == "audit-folder-link-agent"
     assert event.after["relative_path"] == "legacy/linked-product"
+

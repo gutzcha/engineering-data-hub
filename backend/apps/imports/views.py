@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\imports\views.py
+# Type: python
+# Purpose: Imports domain for parser/mapping workflows and linked entity updates.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: IsAuthenticated, has_permission, ImportJobListCreateView, post, ImportJobDryRunView
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from io import BytesIO
 import json
 
@@ -21,6 +40,7 @@ from apps.imports.services import (
     scan_legacy_folders,
     visible_records_for_export,
 )
+from apps.imports.parsers import XlsxParseError, parse_xlsx_rows
 from apps.projects.models import Project, ProjectEvent
 from apps.records.validation import get_object_type_definition
 from apps.workflows.models import WorkflowEvent
@@ -118,6 +138,25 @@ class ImportJobApplyView(APIView):
             request=request,
         )
         return Response(result, status=status.HTTP_200_OK)
+
+
+class ImportColumnPreviewView(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        source_file = request.FILES.get("source_file")
+        if not source_file:
+            raise ValidationError({"source_file": ["This field is required."]})
+
+        try:
+            rows = parse_xlsx_rows(source_file)
+        except XlsxParseError as error:
+            raise ValidationError({"source_file": [str(error)]}) from error
+
+        first_row = rows[0] if rows else {}
+        columns = list(first_row.get("values", {}).keys()) if isinstance(first_row, dict) else []
+        return Response({"columns": columns}, status=status.HTTP_200_OK)
 
 
 class FolderScanView(APIView):
@@ -370,3 +409,4 @@ def _excel_value(value):
     if isinstance(value, bool | int | float) or value is None:
         return value
     return str(value)
+

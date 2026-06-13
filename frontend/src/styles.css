@@ -1112,6 +1112,17 @@ select {
   gap: 3px;
 }
 
+.task-title-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.task-title-link:hover strong,
+.task-title-link:focus-visible strong {
+  color: #0f766e;
+  text-decoration: underline;
+}
+
 .task-title-cell strong {
   color: #17201d;
 }
@@ -1440,5 +1451,113 @@ select {
 
   .empty-state {
     max-width: none;
+  }
+}
+
+/* Operational remediation: clickable overview, dashboard designer, and admin workspace */
+button.metric {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  appearance: none;
+  font: inherit;
+}
+
+button.metric:hover,
+button.metric:focus-visible,
+.admin-action-card:hover,
+.admin-action-card:focus-visible {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 40px rgb(15 23 42 / 12%);
+}
+
+.dashboard-layout-toolbar,
+.dashboard-palette-list,
+.widget-layout-actions,
+.admin-button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.dashboard-widget-grid-editing .dashboard-widget {
+  cursor: grab;
+  outline: 2px dashed rgb(59 130 246 / 28%);
+  outline-offset: 4px;
+}
+
+.dashboard-widget-grid-editing .dashboard-widget:active {
+  cursor: grabbing;
+}
+
+.dashboard-widget-wide {
+  grid-column: span 2;
+}
+
+.dashboard-widget-full {
+  grid-column: 1 / -1;
+}
+
+.button-compact {
+  min-height: 2rem;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.82rem;
+}
+
+.dashboard-palette .dashboard-palette-list,
+.user-admin-list,
+.user-admin-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.admin-action-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 1rem;
+}
+
+.admin-action-card {
+  border: 1px solid var(--border-color, rgb(226 232 240));
+  border-radius: 1.25rem;
+  background: linear-gradient(135deg, rgb(255 255 255), rgb(248 250 252));
+  color: inherit;
+  display: grid;
+  gap: 0.6rem;
+  padding: 1.25rem;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.admin-action-card strong {
+  font-size: 1.05rem;
+}
+
+.admin-action-card small {
+  color: var(--muted-foreground, rgb(71 85 105));
+  line-height: 1.45;
+}
+
+.user-admin-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.75rem;
+  align-items: end;
+  border: 1px solid var(--border-color, rgb(226 232 240));
+  border-radius: 1rem;
+  padding: 1rem;
+  background: rgb(255 255 255 / 72%);
+}
+
+@media (max-width: 760px) {
+  .dashboard-widget-wide,
+  .dashboard-widget-full {
+    grid-column: 1;
+  }
+
+  .widget-layout-actions {
+    width: 100%;
   }
 }

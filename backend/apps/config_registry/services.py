@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\config_registry\services.py
+# Type: python
+# Purpose: Configuration registry service for dynamic schemas, publishing, and config governance.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: ConfigurationValidationError, __init__, create_draft_from_current, validate_draft, breaking_changes_for_draft
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 import copy
 import re
 
@@ -1016,3 +1035,4 @@ def _snake_case_token(value):
     token = re.sub(r"[^a-zA-Z0-9]+", "_", str(value).strip().lower())
     token = re.sub(r"_+", "_", token).strip("_")
     return token or "configured"
+

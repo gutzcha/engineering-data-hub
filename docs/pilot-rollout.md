@@ -1,3 +1,24 @@
+<!--
+===
+File Summary
+Path: docs\pilot-rollout.md
+Type: markdown
+Purpose: Pilot rollout strategy and staged adoption guidance.
+Primary responsibilities:
+- Domain behavior is summarized for fast onboarding and avoids full-file reread.
+- Core symbols: Pilot Rollout
+Inputs:
+- Downstream and upstream interactions in the same domain.
+Outputs:
+- API payloads, records, side effects, or UI views depending on file role.
+Dependencies:
+- Shared runtime services and adjacent domain modules.
+Known risks:
+- Validate behavior after migrations, dependency upgrades, or contract changes.
+===
+
+-->
+
 # Pilot Rollout
 
 This plan introduces the Plastic Engineering Data Hub to a controlled pilot group before wider rollout.
@@ -217,3 +238,4 @@ Rollback steps:
 4. Reopen the legacy process for active work.
 5. Fix root causes in a non-production environment.
 6. Repeat validation before resuming rollout.
+

@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\reports\query.py
+# Type: python
+# Purpose: Reports domain for query definitions, payload shaping, and saved reporting views.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: ReportFilterValidationError, __init__, saved_view_results, validate_saved_view_filters, apply_record_filters
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from __future__ import annotations
 
 from collections import Counter
@@ -11,6 +30,7 @@ from apps.accounts.permissions import records_user_can_view, user_can, user_has_
 from apps.audit.models import AuditEvent
 from apps.audit.views import _visible_events
 from apps.documents.models import Document
+from apps.projects.models import Project
 from apps.projects.models import ProjectTask
 from apps.records.models import Record
 from apps.relationships.models import Relationship
@@ -20,6 +40,7 @@ from apps.workflows.models import WorkflowTask
 DEFAULT_RESULT_LIMIT = 100
 MAX_RESULT_LIMIT = 500
 MAX_SCAN_LIMIT = 2000
+DEFAULT_HOME_OVERVIEW_LIMIT = 10
 SAFE_FIELD_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)*$")
 FIELD_FILTER_TYPES = {"field_equals", "field_contains", "date_before", "date_after"}
 FILTER_TYPES = FIELD_FILTER_TYPES | {
@@ -28,6 +49,20 @@ FILTER_TYPES = FIELD_FILTER_TYPES | {
     "relationship_exists",
     "assigned_workflow_task",
     "sort",
+}
+
+HOME_STATUS_FILTERS = {
+    "active": {"draft", "planning", "open", "active"},
+    "review": {"review", "pending", "in_progress", "engineering_review", "quality_review", "qa_review"},
+    "blocked": {"blocked", "hold", "on_hold"},
+    "ready": {"ready", "released", "complete", "done", "closed", "accepted"},
+}
+
+HOME_STATUS_LABELS = {
+    "active": "Active",
+    "review": "Review",
+    "blocked": "Blocked",
+    "ready": "Ready",
 }
 
 
@@ -330,6 +365,10 @@ def _recent_changes(user, config):
                 "action": event.action,
                 "object_type": event.object_type,
                 "object_id": event.object_id,
+                "title": _audit_event_title(event),
+                "subtitle": _audit_event_subtitle(event),
+                "href": _audit_event_href(event),
+                "search_fallback": False,
                 "actor": event.actor_id,
                 "actor_username": event.actor.username if event.actor else None,
                 "created_at": _format_datetime(event.created_at),
@@ -417,6 +456,161 @@ def _serialize_record(record, columns):
             field = column.split(".", 1)[1]
             selected[column] = record.data.get(field)
     return selected
+
+
+def home_overview_payload(user, *, limit=DEFAULT_HOME_OVERVIEW_LIMIT):
+    visible_records = _visible_records_for_user(user)
+    cards = _home_overview_cards(visible_records)
+    recent_records = _serialize_recent_records(
+        _recent_records_for_home(visible_records),
+        limit=limit,
+    )
+    return {"cards": cards, "recent_records": recent_records}
+
+
+def _home_overview_cards(records):
+    cards = []
+    for key in ["active", "review", "blocked", "ready"]:
+        cards.append(
+            {
+                "key": key,
+                "label": HOME_STATUS_LABELS.get(key, key.title()),
+                "value": int(_count_records_for_status(records, key)),
+                "filter": {"status": key},
+            }
+        )
+    return cards
+
+
+def _visible_records_for_user(user):
+    if not user or not user.is_authenticated or not user.is_active:
+        return Record.objects.none()
+    return records_user_can_view(user, Record.objects.all())
+
+
+def _recent_records_for_home(records):
+    return list(records.order_by("-updated_at", "-created_at"))
+
+
+def _serialize_recent_records(records, *, limit=DEFAULT_HOME_OVERVIEW_LIMIT):
+    serialized = []
+    limit = _bounded_home_limit(limit)
+    project_record_ids = [str(record.pk) for record in records if record.object_type_key == "project"][:limit]
+    project_id_by_record_id = {
+        str(record_id): str(project_id)
+        for record_id, project_id in Project.objects.filter(record_id__in=project_record_ids).values_list(
+            "record_id",
+            "id",
+        )
+    }
+
+
+def _audit_event_title(event):
+    return _audit_action_label(event.action)
+
+
+def _audit_event_subtitle(event):
+    parts = [
+        _audit_target_label(event),
+        event.actor.username if event.actor else None,
+        _format_datetime(event.created_at),
+    ]
+    return " · ".join(part for part in parts if part)
+
+
+def _audit_action_label(action):
+    labels = {
+        "release.material_prepared": "Material record prepared",
+        "release.project_prepared": "Project prepared",
+        "release.document_linked": "Document linked",
+        "document.seeded": "Document linked",
+        "document.demo_seeded": "Document linked",
+        "folder.generated": "Managed folder generated",
+        "import.created": "Import job created",
+        "import.dry_run": "Import dry run completed",
+        "import.applied": "Import applied",
+        "record.released": "Record released",
+    }
+    if action in labels:
+        return labels[action]
+    return str(action).replace("_", " ").replace(".", " ").title()
+
+
+def _audit_target_label(event):
+    target_name = _audit_target_name(event)
+    object_label = _audit_object_label(event.object_type)
+    return f"{object_label}: {target_name}" if target_name else object_label
+
+
+def _audit_target_name(event):
+    payload = event.after if isinstance(event.after, dict) else {}
+    for key in ("code", "title", "name", "owner_record", "relative_path"):
+        value = payload.get(key)
+        if value:
+            return str(value)
+    return event.object_id
+
+
+def _audit_object_label(object_type):
+    labels = {
+        "document": "Document",
+        "project": "Project",
+        "record": "Record",
+        "managedfolder": "Managed folder",
+        "importjob": "Import job",
+    }
+    return labels.get(str(object_type).lower(), str(object_type).replace("_", " ").title())
+
+
+def _audit_event_href(event):
+    object_type = str(event.object_type).lower()
+    if object_type == "document":
+        return f"/documents/{event.object_id}"
+    if object_type == "project":
+        return f"/projects/{event.object_id}"
+    if object_type == "record":
+        return f"/records/{event.object_id}"
+    payload = event.after if isinstance(event.after, dict) else {}
+    record_id = payload.get("record_id") or payload.get("record")
+    if record_id:
+        return f"/records/{record_id}"
+    document_id = payload.get("document_id") or payload.get("document")
+    if document_id:
+        return f"/documents/{document_id}"
+    project_id = payload.get("project_id") or payload.get("project")
+    if project_id:
+        return f"/projects/{project_id}"
+    return None
+    for record in records[:limit]:
+        serialized.append(
+            _serialize_home_record(record, project_id_by_record_id=project_id_by_record_id),
+        )
+    return serialized
+
+
+def _serialize_home_record(record, project_id_by_record_id):
+    return {
+        "id": str(record.pk),
+        "code": record.code,
+        "title": record.title,
+        "status": record.status,
+        "object_type_key": record.object_type_key,
+        "project_id": project_id_by_record_id.get(str(record.pk)),
+        "updated_at": _format_datetime(record.updated_at),
+    }
+
+
+def _bounded_home_limit(limit):
+    try:
+        normalized_limit = int(limit)
+    except (TypeError, ValueError):
+        normalized_limit = DEFAULT_HOME_OVERVIEW_LIMIT
+    return max(1, min(normalized_limit, DEFAULT_HOME_OVERVIEW_LIMIT))
+
+
+def _count_records_for_status(records_queryset, status_key):
+    normalized_status = HOME_STATUS_FILTERS.get(status_key, {status_key})
+    return records_queryset.filter(status__in=normalized_status).count()
 
 
 def _bounded_limit(value):
@@ -518,3 +712,4 @@ def _format_datetime(value):
     if isinstance(value, date) and not hasattr(value, "hour"):
         return value.isoformat()
     return value.isoformat().replace("+00:00", "Z")
+

@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\imports\services.py
+# Type: python
+# Purpose: Imports domain for parser/mapping workflows and linked entity updates.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: dry_run_import, apply_import, scan_legacy_folders, accept_folder_links, _preflight_apply_operations
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 
@@ -427,3 +446,4 @@ def visible_records_for_export(user, object_type_key):
 
 def export_timestamp():
     return timezone.now().isoformat()
+

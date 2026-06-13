@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\search\tasks.py
+# Type: python
+# Purpose: Search domain for indexing payload generation and search query APIs.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: index_record, index_document_revision, index_folder_event, enqueue_record_index, enqueue_record_indexes
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from celery import shared_task
 from django.db import transaction
 
@@ -5,7 +24,6 @@ from apps.search.client import get_search_client
 from apps.search.indexers import (
     DOCUMENTS_INDEX,
     FOLDER_EVENTS_INDEX,
-    INDEX_NAMES,
     PROJECTS_INDEX,
     RECORDS_INDEX,
     build_document_revision_payload,
@@ -116,7 +134,7 @@ def rebuild_all_indexes():
         return {"records": 0, "documents": 0, "folder_events": 0, "projects": 0}
 
     counts = {"records": 0, "documents": 0, "folder_events": 0, "projects": 0}
-    for index_name in INDEX_NAMES:
+    for index_name in (RECORDS_INDEX, DOCUMENTS_INDEX, PROJECTS_INDEX, FOLDER_EVENTS_INDEX):
         client.delete_all_documents(index_name)
 
     for batch in _batched(Record.objects.all().iterator(), BATCH_SIZE):
@@ -131,6 +149,14 @@ def rebuild_all_indexes():
         )
         counts["documents"] += len(batch)
 
+    project_queryset = Project.objects.select_related("record")
+    for batch in _batched(project_queryset.iterator(), BATCH_SIZE):
+        client.add_documents(
+            PROJECTS_INDEX,
+            [build_project_payload(project) for project in batch],
+        )
+        counts["projects"] += len(batch)
+
     event_queryset = FolderChangeEvent.objects.select_related("matched_record")
     for batch in _batched(event_queryset.iterator(), BATCH_SIZE):
         client.add_documents(
@@ -138,11 +164,6 @@ def rebuild_all_indexes():
             [build_folder_event_payload(event) for event in batch],
         )
         counts["folder_events"] += len(batch)
-
-    project_queryset = Project.objects.select_related("record")
-    for batch in _batched(project_queryset.iterator(), BATCH_SIZE):
-        client.add_documents(PROJECTS_INDEX, [build_project_payload(project) for project in batch])
-        counts["projects"] += len(batch)
 
     return counts
 
@@ -156,3 +177,4 @@ def _batched(items, batch_size):
             batch = []
     if batch:
         yield batch
+

@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\relationships\models.py
+# Type: python
+# Purpose: Relationships domain for entity graph APIs and relationship operations.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: Relationship, Meta, __str__
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from django.db import models
 
 
@@ -36,3 +55,4 @@ class Relationship(models.Model):
             f"{self.source_record_id} -[{self.relationship_type_key}]-> "
             f"{self.target_record_id}"
         )
+

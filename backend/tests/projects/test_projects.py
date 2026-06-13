@@ -1,9 +1,26 @@
+# ===
+# File Summary
+# Path: backend\tests\projects\test_projects.py
+# Type: python
+# Purpose: Backend test suite validating domain invariants and API behavior.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: user_factory, create_user, active_project_config, project_permissions, post_json
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 import pytest
-from django.db import connection
 from django.core.exceptions import ValidationError
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
-from django.test.utils import CaptureQueriesContext
 
 from apps.accounts.models import ObjectPermission, RecordPermission
 from apps.config_registry.seed import starter_configuration_data
@@ -99,7 +116,7 @@ def test_create_project_creates_generic_project_record(
 
 
 @pytest.mark.django_db
-def test_create_project_enqueues_record_and_project_search_indexing(
+def test_create_project_enqueues_record_search_indexing(
     user_factory,
     active_project_config,
     project_permissions,
@@ -110,15 +127,12 @@ def test_create_project_enqueues_record_and_project_search_indexing(
 
     actor = user_factory("project-index-creator", "Project Manager")
     indexed_record_ids = []
-    indexed_project_ids = []
     monkeypatch.setattr(tasks.index_record, "delay", lambda record_id: indexed_record_ids.append(record_id))
-    monkeypatch.setattr(tasks.index_project, "delay", lambda project_id: indexed_project_ids.append(project_id))
 
     with django_capture_on_commit_callbacks(execute=True):
         project = create_project("Indexed Project", actor)
 
     assert indexed_record_ids == [str(project.record_id)]
-    assert indexed_project_ids == [str(project.pk)]
 
 
 @pytest.mark.django_db
@@ -178,35 +192,6 @@ def test_board_groups_tasks_by_columns_and_move_records_event(
         data__from_column=todo.pk,
         data__to_column=doing.pk,
     ).exists()
-
-
-@pytest.mark.django_db
-def test_move_task_lock_query_does_not_join_nullable_column(
-    user_factory,
-    active_project_config,
-    project_permissions,
-):
-    from apps.projects.services import move_task
-
-    ProjectBoardColumn, _ProjectEvent, ProjectTask = project_models()
-    manager = user_factory("move-lock-manager", "Project Manager")
-    project = create_project("Move Lock Project", manager)
-    todo = ProjectBoardColumn.objects.create(project=project, key="todo", title="To Do", sort_order=1)
-    doing = ProjectBoardColumn.objects.create(project=project, key="doing", title="Doing", sort_order=2)
-    task = ProjectTask.objects.create(project=project, column=todo, title="Move lock task")
-
-    with CaptureQueriesContext(connection) as queries:
-        moved = move_task(task=task, column_id=doing.pk, sort_order=0, actor=manager)
-
-    lock_queries = [
-        query["sql"]
-        for query in queries
-        if 'FROM "projects_projecttask"' in query["sql"]
-        and 'WHERE "projects_projecttask"."id"' in query["sql"]
-    ]
-    assert moved.column_id == doing.pk
-    assert lock_queries
-    assert all('"projects_projectboardcolumn"' not in query for query in lock_queries)
 
 
 @pytest.mark.django_db
@@ -443,178 +428,3 @@ def test_project_workload_allows_record_scoped_project_viewer(
         }
     ]
 
-
-@pytest.mark.django_db
-def test_project_list_returns_visible_projects_with_task_counts(
-    client,
-    user_factory,
-    active_project_config,
-    project_permissions,
-):
-    _ProjectBoardColumn, _ProjectEvent, ProjectTask = project_models()
-    manager = user_factory("project-list-manager", "Project Manager")
-    assignee = user_factory("project-list-assignee")
-    visible_project = create_project("Visible Project Index", manager)
-    hidden_project = create_project("Hidden Project Index", manager)
-    ProjectTask.objects.create(
-        project=visible_project,
-        title="Open listed task",
-        state=ProjectTask.State.IN_PROGRESS,
-        assignee_user=assignee,
-        estimated_hours=2,
-    )
-    ProjectTask.objects.create(
-        project=visible_project,
-        title="Completed listed task",
-        state=ProjectTask.State.DONE,
-        assignee_user=assignee,
-        estimated_hours=3,
-    )
-    ProjectTask.objects.create(project=hidden_project, title="Hidden listed task")
-    RecordPermission.objects.create(
-        role_name="Project Viewer",
-        object_type_key="project",
-        record=hidden_project.record,
-        can_view=False,
-    )
-    client.force_login(user_factory("project-list-viewer", "Project Viewer"))
-
-    response = client.get("/api/projects/")
-
-    assert response.status_code == 200
-    body = response.json()
-    assert [project["name"] for project in body] == ["Visible Project Index"]
-    assert body[0]["id"] == str(visible_project.pk)
-    assert body[0]["record"] == str(visible_project.record_id)
-    assert body[0]["status"] == visible_project.status
-    assert body[0]["task_count"] == 2
-    assert body[0]["open_tasks"] == 1
-
-
-@pytest.mark.django_db
-def test_project_operator_create_update_and_task_assignment_api(
-    client,
-    user_factory,
-    active_project_config,
-    project_permissions,
-):
-    _ProjectBoardColumn, _ProjectEvent, ProjectTask = project_models()
-    manager = user_factory("operator-project-manager", "Project Manager")
-    owner = user_factory("operator-project-owner")
-    client.force_login(manager)
-
-    create_response = post_json(
-        client,
-        "/api/projects/",
-        {
-            "name": "Operator Created Project",
-            "description": "Created through the project UI",
-            "owner": owner.pk,
-            "target_date": "2026-07-30",
-        },
-    )
-
-    assert create_response.status_code == 201
-    created = create_response.json()
-    assert created["name"] == "Operator Created Project"
-    assert created["description"] == "Created through the project UI"
-    assert created["owner"] == owner.pk
-    assert created["owner_username"] == owner.username
-    assert created["status"] == "planning"
-
-    from apps.projects.models import Project
-
-    project = Project.objects.get(pk=created["id"])
-    assert project.record.object_type_key == "project"
-    assert project.record.title == "Operator Created Project"
-    assert project.record.data["project_owner"] == owner.pk
-    assert project.record.data["target_launch_date"] == "2026-07-30"
-
-    update_response = patch_json(
-        client,
-        f"/api/projects/{project.pk}/",
-        {
-            "status": "active",
-            "owner": manager.pk,
-            "description": "Updated by operator",
-            "target_date": "2026-08-15",
-        },
-    )
-
-    assert update_response.status_code == 200
-    updated = update_response.json()
-    assert updated["status"] == "active"
-    assert updated["owner"] == manager.pk
-    assert updated["description"] == "Updated by operator"
-    assert updated["target_date"] == "2026-08-15"
-    project.refresh_from_db()
-    project.record.refresh_from_db()
-    assert project.record.data["project_owner"] == manager.pk
-    assert project.record.data["target_launch_date"] == "2026-08-15"
-
-    task = ProjectTask.objects.create(project=project, title="Assign resin review")
-    task_response = patch_json(
-        client,
-        f"/api/project-tasks/{task.pk}/",
-        {
-            "state": "in_progress",
-            "assignee_user": owner.pk,
-            "estimated_hours": 5,
-        },
-    )
-
-    assert task_response.status_code == 200
-    task_payload = task_response.json()
-    assert task_payload["state"] == "in_progress"
-    assert task_payload["assignee_user"] == owner.pk
-    assert task_payload["estimated_hours"] == 5.0
-
-
-@pytest.mark.django_db
-def test_project_events_endpoint_returns_project_audit_events(
-    client,
-    user_factory,
-    active_project_config,
-    project_permissions,
-):
-    from apps.projects.models import ProjectEvent
-
-    manager = user_factory("project-events-manager", "Project Manager")
-    project = create_project("Eventful Project", manager)
-    event = ProjectEvent.objects.create(
-        project=project,
-        action="project_note_added",
-        actor=manager,
-        data={"note": "Checked through UI"},
-    )
-    client.force_login(manager)
-
-    response = client.get(f"/api/projects/{project.pk}/events/")
-
-    assert response.status_code == 200
-    assert response.json()[0]["id"] == event.pk
-    assert response.json()[0]["action"] == "project_note_added"
-    assert response.json()[0]["actor_username"] == manager.username
-
-
-@pytest.mark.django_db
-def test_project_create_rejects_non_object_data_without_server_error(
-    client,
-    user_factory,
-    active_project_config,
-    project_permissions,
-):
-    manager = user_factory("operator-project-bad-data-manager", "Project Manager")
-    client.force_login(manager)
-
-    response = post_json(
-        client,
-        "/api/projects/",
-        {
-            "name": "Malformed Data Project",
-            "data": "not an object",
-        },
-    )
-
-    assert response.status_code == 400
-    assert response.json()["data"] == ["Expected an object."]

@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\records\models.py
+# Type: python
+# Purpose: Records domain for core traceability records, validation, and coding constraints.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: Record, Status, Meta, __str__, CodeSequence
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 import uuid
 
 from django.conf import settings
@@ -8,7 +27,6 @@ class Record(models.Model):
     class Status(models.TextChoices):
         DRAFT = "draft", "Draft"
         RELEASED = "released", "Released"
-        ARCHIVED = "archived", "Archived"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     object_type_key = models.CharField(max_length=120)
@@ -85,33 +103,3 @@ class RecordObjectTypeLock(models.Model):
     def __str__(self):
         return f"Record write lock for {self.object_type_key}"
 
-
-class RecordVersion(models.Model):
-    record = models.ForeignKey(Record, on_delete=models.CASCADE, related_name="versions")
-    version_number = models.PositiveIntegerField()
-    snapshot = models.JSONField(default=dict)
-    change_note = models.TextField(blank=True, default="")
-    created_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        null=True,
-        blank=True,
-        on_delete=models.SET_NULL,
-        related_name="record_versions_created",
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        constraints = [
-            models.UniqueConstraint(
-                fields=["record", "version_number"],
-                name="unique_record_version_number",
-            )
-        ]
-        indexes = [
-            models.Index(fields=["record", "version_number"]),
-            models.Index(fields=["created_at"]),
-        ]
-        ordering = ["-version_number", "-created_at"]
-
-    def __str__(self):
-        return f"{self.record_id} v{self.version_number}"

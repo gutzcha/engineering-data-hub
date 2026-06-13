@@ -1,9 +1,29 @@
+# ===
+# File Summary
+# Path: backend\apps\config_registry\views.py
+# Type: python
+# Purpose: Configuration registry service for dynamic schemas, publishing, and config governance.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: IsConfigurationAdmin, has_permission, active_config, create_draft, update_config_draft
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from django.shortcuts import get_object_or_404
 from rest_framework import permissions, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
 from apps.accounts.permissions import is_configuration_admin, is_system_admin
+from apps.config_registry.seed import starter_configuration_data
 from apps.config_registry.models import ConfigurationDraft, ConfigurationVersion
 from apps.config_registry.schemas import ConfigurationDraftSerializer, ConfigurationVersionSerializer
 from apps.config_registry.services import (
@@ -26,8 +46,51 @@ class IsConfigurationAdmin(permissions.BasePermission):
 def active_config(request):
     configuration = get_active_config()
     if configuration is None:
-        return Response(status=status.HTTP_404_NOT_FOUND)
-    return Response(ConfigurationVersionSerializer(configuration).data)
+        payload = {
+            "id": 0,
+            "version": 0,
+            "published_at": None,
+            "published_by": None,
+            "data": starter_configuration_data(),
+        }
+        configuration_data = payload["data"]
+    else:
+        payload = dict(ConfigurationVersionSerializer(configuration).data)
+        configuration_data = _dict_config(configuration.data)
+    payload["document_types"] = _collect_document_types(configuration_data)
+    payload["choices"] = _collect_choice_fields(configuration_data)
+    return Response(payload)
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def active_field_options(request):
+    object_type_key = (request.query_params.get("object_type_key") or "").strip()
+    field_key = (request.query_params.get("field_key") or "").strip()
+    if not object_type_key or not field_key:
+        return Response(
+            {"detail": "object_type_key and field_key are required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    configuration = get_active_config()
+    if configuration is None:
+        configuration_data = starter_configuration_data()
+    else:
+        configuration_data = _dict_config(configuration.data)
+
+    choices = _field_options_for_active(
+        configuration_data,
+        object_type_key=object_type_key,
+        field_key=field_key,
+    )
+    return Response(
+        {
+            "object_type_key": object_type_key,
+            "field_key": field_key,
+            "options": choices,
+        }
+    )
 
 
 @api_view(["POST"])
@@ -54,10 +117,23 @@ def update_config_draft(request, draft_id):
 
 
 @api_view(["GET"])
-@permission_classes([IsConfigurationAdmin])
+@permission_classes([permissions.IsAuthenticated])
 def config_history(request):
-    versions = ConfigurationVersion.objects.order_by("-version")
-    return Response(ConfigurationVersionSerializer(versions, many=True).data)
+    versions = list(ConfigurationVersion.objects.order_by("-version"))
+    if versions:
+        return Response(ConfigurationVersionSerializer(versions, many=True).data)
+
+    return Response(
+        [
+            {
+                "id": 0,
+                "version": 0,
+                "data": _dict_config(starter_configuration_data()),
+                "published_by": None,
+                "published_at": None,
+            }
+        ]
+    )
 
 
 @api_view(["POST"])
@@ -120,3 +196,58 @@ def _breaking_changes_from_errors(errors):
     return [
         error for error in errors if error.get("code") != "breaking_changes_require_confirmation"
     ]
+
+
+def _collect_document_types(configuration):
+    document_types = []
+    for object_type in _iter_dict_list(configuration.get("object_types")):
+        fields = _iter_dict_list(object_type.get("fields"))
+        for field in fields:
+            if field.get("key") != "document_type":
+                continue
+            for value in _string_list(field.get("options")):
+                if value not in document_types:
+                    document_types.append(value)
+    return document_types
+
+
+def _collect_choice_fields(configuration):
+    choices = {}
+    for object_type in _iter_dict_list(configuration.get("object_types")):
+        for field in _iter_dict_list(object_type.get("fields")):
+            field_key = field.get("key")
+            if not field_key:
+                continue
+            options = _string_list(field.get("options"))
+            if options and field.get("type") == "choice":
+                choices[field_key] = options
+    return choices
+
+
+def _field_options_for_active(configuration, *, object_type_key, field_key):
+    for object_type in _iter_dict_list(configuration.get("object_types")):
+        if object_type.get("key") != object_type_key:
+            continue
+        for field in _iter_dict_list(object_type.get("fields")):
+            if field.get("key") == field_key:
+                if field.get("type") == "choice":
+                    return _string_list(field.get("options"))
+                return []
+    return []
+
+
+def _iter_dict_list(value):
+    if not isinstance(value, list):
+        return ()
+    return (item for item in value if isinstance(item, dict))
+
+
+def _string_list(value):
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]
+
+
+def _dict_config(value):
+    return value if isinstance(value, dict) else {}
+

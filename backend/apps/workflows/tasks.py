@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\workflows\tasks.py
+# Type: python
+# Purpose: Workflow domain for task models, engine execution, and worker scheduling.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: create_tasks_for_transition, _resolve_assignee_user, _resolve_due_date, _resolve_related_record, _resolve_related_document
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
@@ -68,3 +87,4 @@ def _resolve_related_document(instance, template):
     if document_type:
         return Document.objects.filter(owner_record=instance.record, document_type=document_type).first()
     return None
+

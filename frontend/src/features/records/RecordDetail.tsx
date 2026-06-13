@@ -1,3 +1,24 @@
+/*
+ * ===
+ * File Summary
+ * Path: frontend\src\features\records\RecordDetail.tsx
+ * Type: typescript
+ * Purpose: Frontend feature module implementing business flows and UI surfaces.
+ * Primary responsibilities:
+ * - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+ * - Core symbols: RecordDetail
+ * Inputs:
+ * - Downstream and upstream interactions in the same domain.
+ * Outputs:
+ * - API payloads, records, side effects, or UI views depending on file role.
+ * Dependencies:
+ * - Shared runtime services and adjacent domain modules.
+ * Known risks:
+ * - Validate behavior after migrations, dependency upgrades, or contract changes.
+ * ===
+ * 
+ */
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Archive,
@@ -625,3 +646,4 @@ function itemsFromResponse<T>(response?: T[] | { results?: T[] }) {
 
   return response?.results ?? [];
 }
+

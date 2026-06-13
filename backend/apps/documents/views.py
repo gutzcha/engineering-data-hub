@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\documents\views.py
+# Type: python
+# Purpose: Document domain service managing records, revisions, and extraction workflows.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: RevisionConflict, IsAuthenticated, has_permission, DocumentViewSet, create
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from django.db import IntegrityError, transaction
 from django.http import Http404
 from django.http import FileResponse
@@ -7,6 +26,7 @@ from rest_framework import permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import APIException
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.response import Response
 
 from apps.accounts.permissions import user_can
@@ -30,9 +50,15 @@ from apps.documents.storage import (
 from apps.folders.models import ManagedFolder
 from apps.records.models import Record
 from apps.search.tasks import enqueue_document_revision_index
+from apps.accounts.permissions import records_user_can_view
 
 
 PREVIEW_TEXT_CHARS = 20_000
+
+
+class DocumentPagination(LimitOffsetPagination):
+    default_limit = 100
+    max_limit = 250
 
 
 class RevisionConflict(APIException):
@@ -46,9 +72,26 @@ class IsAuthenticated(permissions.BasePermission):
         return bool(request.user and request.user.is_authenticated and request.user.is_active)
 
 
-class DocumentViewSet(viewsets.ViewSet):
+class DocumentViewSet(viewsets.ModelViewSet):
+    serializer_class = DocumentSerializer
     permission_classes = [IsAuthenticated]
+    pagination_class = DocumentPagination
     http_method_names = ["get", "post", "head", "options"]
+    queryset = Document.objects.select_related("owner_record", "current_revision", "folder")
+
+    def get_queryset(self):
+        queryset = Document.objects.select_related("owner_record", "current_revision", "folder")
+        owner_record = self.request.query_params.get("owner_record")
+        object_type_key = self.request.query_params.get("object_type_key")
+
+        if owner_record:
+            queryset = queryset.filter(owner_record_id=owner_record)
+
+        if object_type_key:
+            queryset = queryset.filter(owner_record__object_type_key=object_type_key)
+
+        visible_records = records_user_can_view(self.request.user, Record.objects.all())
+        return queryset.filter(owner_record_id__in=visible_records.values_list("pk", flat=True))
 
     def list(self, request):
         documents = Document.objects.select_related(
@@ -420,3 +463,4 @@ def _revision_snapshot(revision):
         "storage_path": revision.storage_path,
         "state": revision.state,
     }
+

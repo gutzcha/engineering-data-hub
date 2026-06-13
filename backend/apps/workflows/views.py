@@ -1,14 +1,31 @@
+# ===
+# File Summary
+# Path: backend\apps\workflows\views.py
+# Type: python
+# Purpose: Workflow domain for task models, engine execution, and worker scheduling.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: IsAuthenticated, has_permission, WorkflowTaskSerializer, Meta, WorkflowTaskListView
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
-from django.contrib.auth import get_user_model
 from rest_framework import permissions, serializers, status
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.permissions import SYSTEM_ADMIN_ROLE, user_can
-from apps.audit.services import record_audit_event, snapshot_model
 from apps.records.models import Record
 from apps.workflows.engine import (
     WorkflowGuardError,
@@ -17,10 +34,7 @@ from apps.workflows.engine import (
     get_or_create_instance_for_record,
     perform_transition,
 )
-from apps.workflows.models import WorkflowEvent, WorkflowTask, WorkflowTaskStateError, WorkflowTransition
-
-
-User = get_user_model()
+from apps.workflows.models import WorkflowTask, WorkflowTaskStateError, WorkflowTransition
 
 
 class IsAuthenticated(permissions.BasePermission):
@@ -53,19 +67,6 @@ class WorkflowTaskSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class WorkflowTaskCreateSerializer(serializers.Serializer):
-    title = serializers.CharField(max_length=255)
-    description = serializers.CharField(required=False, allow_blank=True, default="")
-    related_record = serializers.UUIDField()
-    assignee_user = serializers.PrimaryKeyRelatedField(
-        queryset=User.objects.all(),
-        required=False,
-        allow_null=True,
-    )
-    assignee_role = serializers.CharField(required=False, allow_blank=True, default="")
-    due_date = serializers.DateTimeField(required=False, allow_null=True)
-
-
 class WorkflowTaskListView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -75,45 +76,6 @@ class WorkflowTaskListView(APIView):
         if state_filter:
             tasks = tasks.filter(state=state_filter)
         return Response(WorkflowTaskSerializer(tasks, many=True).data, status=status.HTTP_200_OK)
-
-    def post(self, request):
-        serializer = WorkflowTaskCreateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        record = get_object_or_404(Record, pk=serializer.validated_data["related_record"])
-        if not user_can(request.user, "edit", record.object_type_key, record_id=str(record.pk)):
-            raise PermissionDenied("You do not have permission to create tasks for this record.")
-        instance = get_or_create_instance_for_record(record, request.user)
-        if instance is None:
-            return Response(
-                {"detail": "No active workflow is configured for this record."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        task = WorkflowTask.objects.create(
-            instance=instance,
-            title=serializer.validated_data["title"],
-            description=serializer.validated_data.get("description", ""),
-            related_record=record,
-            assignee_user=serializer.validated_data.get("assignee_user"),
-            assignee_role=serializer.validated_data.get("assignee_role", ""),
-            due_date=serializer.validated_data.get("due_date"),
-            created_by=request.user,
-        )
-        WorkflowEvent.objects.create(
-            instance=instance,
-            task=task,
-            action="task_created",
-            actor=request.user,
-            data={"task_id": task.pk},
-        )
-        record_audit_event(
-            request.user,
-            "workflow.task_created",
-            task,
-            before=None,
-            after=_workflow_task_audit_snapshot(task),
-            request=request,
-        )
-        return Response(WorkflowTaskSerializer(task).data, status=status.HTTP_201_CREATED)
 
 
 class WorkflowTaskCompleteView(APIView):
@@ -250,22 +212,3 @@ def _serialize_instance(instance):
         ],
     }
 
-
-def _workflow_task_audit_snapshot(task):
-    return snapshot_model(
-        task,
-        [
-            "id",
-            "instance_id",
-            "title",
-            "description",
-            "assignee_user_id",
-            "assignee_role",
-            "due_date",
-            "state",
-            "related_record_id",
-            "related_document_id",
-            "related_project",
-            "created_by_id",
-        ],
-    )

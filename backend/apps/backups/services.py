@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\backups\services.py
+# Type: python
+# Purpose: Backup service managing backup manifests, task scheduling, and restore metadata.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: BackupError, create_backup, run_pg_dump, _generate_backup_id, _validate_backup_id
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 import hashlib
 import json
 import os
@@ -147,13 +166,7 @@ def run_pg_dump(destination: Path):
     env = os.environ.copy()
     if db_config.get("PASSWORD"):
         env["PGPASSWORD"] = str(db_config["PASSWORD"])
-    try:
-        subprocess.run(command, env=env, check=True)
-    except FileNotFoundError as exc:
-        raise BackupError("pg_dump executable was not found in the backend runtime.") from exc
-    except subprocess.CalledProcessError as exc:
-        detail = _process_error_detail(exc)
-        raise BackupError(f"pg_dump failed with exit code {exc.returncode}.{detail}") from exc
+    subprocess.run(command, env=env, check=True)
 
 
 def _generate_backup_id():
@@ -316,17 +329,3 @@ def _ensure_child_path(path: Path, parent: Path):
     if relative_path == Path("."):
         raise BackupError(f"Backup path {path} must be a strict child of backup root {parent}.")
 
-
-def _process_error_detail(error: subprocess.CalledProcessError):
-    output = _decode_process_text(error.stderr) or _decode_process_text(error.stdout)
-    if not output:
-        return ""
-    return f" {output[:500]}"
-
-
-def _decode_process_text(value):
-    if value is None:
-        return ""
-    if isinstance(value, bytes):
-        return value.decode("utf-8", errors="replace").strip()
-    return str(value).strip()

@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\backups\views.py
+# Type: python
+# Purpose: Backup service managing backup manifests, task scheduling, and restore metadata.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: BackupManifestSerializer, Meta, backup_collection, backup_detail
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers, status
 from rest_framework.decorators import api_view, permission_classes
@@ -48,3 +67,4 @@ def backup_collection(request):
 def backup_detail(request, backup_id):
     manifest = get_object_or_404(BackupManifest, backup_id=backup_id)
     return Response(BackupManifestSerializer(manifest).data)
+

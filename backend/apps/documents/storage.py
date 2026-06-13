@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\documents\storage.py
+# Type: python
+# Purpose: Document domain service managing records, revisions, and extraction workflows.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: DocumentStorageError, save_uploaded_revision_file, finalize_uploaded_revision_file, discard_uploaded_revision_file, discard_finalized_revision_file
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 import hashlib
 import os
 from pathlib import Path, PurePath
@@ -105,3 +124,4 @@ def _is_relative_to(path: Path, parent: Path) -> bool:
     except ValueError:
         return False
     return True
+

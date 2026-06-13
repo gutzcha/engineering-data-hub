@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\apps\folders\views.py
+# Type: python
+# Purpose: Folders domain handling templates, scans, change events, and review flows.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: IsAuthenticated, has_permission, FolderChangeEventViewSet, get_queryset, accept
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from pathlib import Path, PurePosixPath
 
 from django.contrib.auth import get_user_model
@@ -240,3 +259,4 @@ def _safe_linked_path(event):
     if candidate != folder_root and folder_root not in candidate.parents:
         raise ValidationError({"path": ["Folder event path must stay inside the managed folder."]})
     return relative_event_path
+

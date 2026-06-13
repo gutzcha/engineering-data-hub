@@ -1,3 +1,24 @@
+/*
+ * ===
+ * File Summary
+ * Path: frontend\src\features\projects\ProjectTimeline.tsx
+ * Type: typescript
+ * Purpose: Frontend feature module implementing business flows and UI surfaces.
+ * Primary responsibilities:
+ * - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+ * - Core symbols: ProjectTimeline
+ * Inputs:
+ * - Downstream and upstream interactions in the same domain.
+ * Outputs:
+ * - API payloads, records, side effects, or UI views depending on file role.
+ * Dependencies:
+ * - Shared runtime services and adjacent domain modules.
+ * Known risks:
+ * - Validate behavior after migrations, dependency upgrades, or contract changes.
+ * ===
+ * 
+ */
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CalendarDays, GitBranch, Milestone } from "lucide-react";
 
@@ -236,3 +257,4 @@ function formatDate(value?: string) {
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Project timeline request failed.";
 }
+

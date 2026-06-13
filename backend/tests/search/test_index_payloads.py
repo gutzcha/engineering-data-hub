@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\tests\search\test_index_payloads.py
+# Type: python
+# Purpose: Backend test suite validating domain invariants and API behavior.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: user_factory, create_user, search_permissions, test_record_payload_contains_required_fields_data_text_and_relationship_text, test_record_payload_includes_incoming_relationship_text
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
@@ -781,3 +800,4 @@ def test_unknown_search_indexes_are_denied_by_default(user_factory):
     user = user_factory("unknown-search-user")
 
     assert _user_can_view_hit(user, "unknown", {"id": "unknown-1"}) is False
+

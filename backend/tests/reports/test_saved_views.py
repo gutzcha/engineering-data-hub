@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\tests\reports\test_saved_views.py
+# Type: python
+# Purpose: Backend test suite validating domain invariants and API behavior.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: user_factory, create_user, report_permissions, post_json, create_record
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 from datetime import date, timedelta
 
 import pytest
@@ -633,3 +652,4 @@ def test_dashboard_task_widgets_are_permission_filtered(client, user_factory, re
         }
     ]
     assert done_task.state == WorkflowTask.State.DONE
+

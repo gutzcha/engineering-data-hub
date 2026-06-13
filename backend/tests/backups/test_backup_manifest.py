@@ -1,3 +1,22 @@
+# ===
+# File Summary
+# Path: backend\tests\backups\test_backup_manifest.py
+# Type: python
+# Purpose: Backend test suite validating domain invariants and API behavior.
+# Primary responsibilities:
+# - Domain behavior is summarized for fast onboarding and avoids full-file reread.
+# - Core symbols: test_backup_manifest_records_paths_and_sha256_payloads, fake_database_dump, test_backup_rejects_unsafe_backup_ids, test_backup_redacts_secret_url_query_values, _sha256
+# Inputs:
+# - Downstream and upstream interactions in the same domain.
+# Outputs:
+# - API payloads, records, side effects, or UI views depending on file role.
+# Dependencies:
+# - Shared runtime services and adjacent domain modules.
+# Known risks:
+# - Validate behavior after migrations, dependency upgrades, or contract changes.
+# ===
+# 
+
 import hashlib
 import importlib
 import importlib.util
@@ -223,3 +242,4 @@ def _sha256(path: Path):
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
