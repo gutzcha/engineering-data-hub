@@ -238,16 +238,16 @@ Create an untracked isolated override file named `compose.isolated.yaml`:
 ```yaml
 services:
   proxy:
-    ports:
+    ports: !override
       - "4443:443"
   backend:
-    ports:
+    ports: !override
       - "8010:8000"
   meilisearch:
-    ports:
+    ports: !override
       - "7710:7700"
   frontend:
-    ports:
+    ports: !override
       - "5183:5173"
 ```
 
