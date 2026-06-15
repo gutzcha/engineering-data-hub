@@ -20,3 +20,4 @@ playwright-report/
 !.env.example
 !example.env
 /backups/
+/engineering-data-hub/
