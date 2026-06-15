@@ -398,6 +398,51 @@ Never improvise production rollback while users are actively writing data.
 
 A release-ready local dataset should include meaningful plastic engineering content, not empty or toy data.
 
+The populated PostgreSQL database is not stored in Git. A clone contains the application code, migrations, starter configuration, seed commands, and tests, but it does not contain live SQL tables, Docker volumes, database dumps, uploaded runtime media, or local `.env` secrets.
+
+Tracked recreation assets:
+
+| Asset | Purpose |
+| --- | --- |
+| `backend/apps/config_registry/fixtures/plastic_engineering_v1.json` | Starter object templates, workflows, dashboards, and layouts. |
+| `backend/apps/api/management/commands/seed_client_readiness_demo.py` | Creates client-readiness records and operating data for local/staging validation. |
+| `backend/apps/documents/management/commands/seed_demo_documents.py` | Creates demo document records and revisions. |
+| `backend/apps/documents/management/commands/prepare_client_demo.py` | Rebuilds the local/staging release dataset and search indexes. |
+| `backend/scripts/client_readiness_smoke.py` | Verifies the recreated dataset has required users, projects, documents, and links. |
+
+Not tracked:
+
+| Not in Git | How to recreate or provide |
+| --- | --- |
+| PostgreSQL live tables and rows | Run migrations, then run the approved seed/preparation command. |
+| Docker volumes | Recreated by Docker Compose; populated by migrations and seed commands. |
+| Uploaded runtime media/document binaries | Recreated by seed commands for local/staging, or restored from backup for production. |
+| SQL dumps and backup archives | Stored outside Git in the configured backup location. |
+| `.env` secrets and passwords | Created from `.env.example` or `example.env`, then filled with real local/deployment values. |
+
+To recreate the local/staging client-readiness dataset from a fresh clone:
+
+```sh
+cp .env.example .env
+```
+
+Set real local values in `.env`, including `RELEASE_ADMIN_PASSWORD`, then run:
+
+```sh
+docker compose -f compose.yaml -f compose.dev.yaml up -d --build
+docker compose -f compose.yaml -f compose.dev.yaml exec backend python manage.py migrate
+docker compose -f compose.yaml -f compose.dev.yaml exec backend python manage.py prepare_client_demo --confirm-destructive-reset
+docker compose -f compose.yaml -f compose.dev.yaml exec backend python scripts/client_readiness_smoke.py
+```
+
+Expected smoke result:
+
+```text
+Client-readiness smoke: PASS
+```
+
+Do not run `prepare_client_demo --confirm-destructive-reset` against production client data. For production, restore real data from an approved backup or perform a controlled migration/import plan.
+
 Minimum expectations:
 
 - Active users required for the release are present.
